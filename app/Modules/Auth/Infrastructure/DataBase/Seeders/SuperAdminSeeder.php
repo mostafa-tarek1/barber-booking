@@ -16,7 +16,7 @@ class SuperAdminSeeder extends Seeder
         Employee::create([
             'first_name' => 'Super',
             'last_name' => 'Admin',
-            'email' => 'admin@locations.com',
+            'email' => 'admin@barbers.com',
             'password' => '123123123',
             'phone' => '123123123',
             'employee_type' => 'super_admin',
