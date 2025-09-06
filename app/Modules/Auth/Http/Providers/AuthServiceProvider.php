@@ -25,7 +25,7 @@ class AuthServiceProvider extends ServiceProvider
     public function boot(): void
     {
         //
-        $this->loadMigrationsFrom(app_path('Modules/Auth/Infrastructure/DataBase/Migrations'));
+        $this->loadMigrationsFrom(app_path('Modules/Auth/Infrastructure/Database/Migrations'));
 //        $this->loadViewsFrom(app_path('Modules/Auth/Http/Views'), 'Auth');
         $this->loadRoutesFrom(app_path('Modules/Auth/Http/Routes/Api.php'));
         $this->loadRoutesFrom(app_path('Modules/Auth/Http/Routes/Dashboard.php'));
