@@ -34,13 +34,25 @@
     cd barber-booking
     ```
 2. Install dependencies:
-   composer install
-   npm install && npm run dev
+
+    ```bash
+    composer install
+    npm install && npm run dev
+    ```
+
 3. Configure environment:
-   cp .env.example .env
+    ```bash
+    cp .env.example .env
+    ```
 4. Run migrations:
-   php artisan migrate --seed
+    ```bash
+    php artisan migrate --seed
+    ```
 5. Generate an API token:
-   php artisan passport:install
+    ```bash
+    php artisan passport:install
+    ```
 6. Start the server:
-   php artisan serve
+    ```bash
+    php artisan serve
+    ```
