@@ -85,10 +85,10 @@ abstract class BaseRepositoryAbstract implements BaseRepositoryInterface
             $model->refresh();
             return $model;
         } catch (Exception $e) {
-            // dd($e->getMessage());
             DB::rollBack();
             deleteFilesFromDto($dto);
             report($e);
+            throw new \Exception('Error creating record: ' . $e->getMessage());
             return new $this->model(); // Return a new instance of the model in case of failure
         }
     }

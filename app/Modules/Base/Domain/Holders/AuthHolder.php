@@ -52,7 +52,7 @@ class AuthHolder
             } */
            /* $accessToken = PersonalAccessToken::findToken($token);
             return $accessToken->tokenable; */
-            return auth($guard)->user();
+            return (auth()->guard($guard)->user());
 
             // $authResult = $authService->checkAuth($token);
             // dd($authResult);
