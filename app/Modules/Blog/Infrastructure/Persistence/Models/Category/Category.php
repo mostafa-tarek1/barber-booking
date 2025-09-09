@@ -2,56 +2,35 @@
 
 namespace App\Modules\Blog\Infrastructure\Persistence\Models\Category;
 
-use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
-use App\Modules\Blog\Infrastructure\Persistence\Models\Blog\Blog;
+
+use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Model;
-use Astrotomic\Translatable\Contracts\Translatable as TranslatableContract;
 use Astrotomic\Translatable\Translatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Casts\Attribute;
-use Illuminate\Support\Facades\Storage;
-
+use App\Modules\Blog\Infrastructure\Persistence\Models\Blog\Blog;
+use Astrotomic\Translatable\Contracts\Translatable as TranslatableContract;
 
 class Category extends Model implements TranslatableContract
 {
-    use Translatable;
     use HasFactory;
-
-    public $translatedAttributes = ['title'];
-
-    protected $table = 'categories';
+    use Translatable;
     protected $fillable = [
-        'is_active',
         'image',
-        'slug',
-        'parent_id',
-        'created_by',
-        'updated_by',
+        'organization_id',
     ];
+    public $translatedAttributes = ['title'];
+    protected $translationForeignKey = 'category_id';
+    protected $table = 'categories';
+    protected $appends  = ["image_link"];
 
-    public function ImageLink(): Attribute
+
+    public function getImageLinkAttribute()
     {
-        if (isset($this->image) && Storage::disk('public')->exists($this->image)) {
-            return Attribute::make(fn() => asset('storage/' . $this->image));
-        } else {
-            return Attribute::make(fn() => "");
-        }
-    }
-    public function parent()
-    {
-        return $this->belongsTo(Category::class, 'parent_id');
-    }
-    public function children()
-    {
-        return $this->hasMany(Category::class, 'parent_id');
-    }
-    public function creator()
-    {
-        return $this->belongsTo(Employee::class, 'created_by');
+        return $this->image ? asset($this->image) : '';
     }
 
     public function blogs()
     {
-        return $this->belongsToMany(Blog::class);
+        return $this->belongsToMany(Blog::class, 'blog_categories', 'category_id', 'blog_id');
     }
 }

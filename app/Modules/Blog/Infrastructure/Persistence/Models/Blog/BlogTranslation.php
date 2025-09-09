@@ -9,11 +9,14 @@ class BlogTranslation extends Model
 {
     use HasFactory;
     public $timestamps = false;
-
     protected $table = 'blog_translations';
     protected $fillable = [
+        'blog_id',
+        'locale',
         'title',
         'subtitle',
         'description',
     ];
+
+    
 }

@@ -9,7 +9,10 @@ class CategoryTranslation extends Model
 {
     use HasFactory;
     public $timestamps = false;
-
     protected $table = 'category_translations';
-    protected $fillable = ['title'];
+    protected $fillable = [
+        'category_id',
+        'locale',
+        'title',
+    ];
 }

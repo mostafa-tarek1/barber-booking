@@ -2,109 +2,60 @@
 
 namespace App\Modules\Blog\Application\UseCases\Blog;
 
+
 use App\Modules\Base\Domain\Holders\AuthHolder;
-use App\Modules\Base\Domain\Enums\AuthGurdTypeEnum;
-use App\Modules\Base\Application\Response\DataStatus;
 use App\Modules\Blog\Application\DTOS\Blog\BlogDTO;
-use App\Modules\Blog\Application\DTOS\Blog\BlogHashtagDTO;
-use App\Modules\Blog\Http\Resources\Blog\BlogDetailResource;
+use App\Modules\Base\Application\Response\DataStatus;
+use App\Modules\Base\Domain\Enums\AuthGurdTypeEnum;
 use App\Modules\Blog\Http\Resources\Blog\BlogResource;
-use App\Modules\Blog\Infrastructure\Persistence\Repositories\Blog\BlogHashtagsRepository;
-use App\Modules\Blog\Infrastructure\Persistence\Repositories\Blog\BlogRepository;
 use App\Modules\Blog\Application\DTOS\Blog\BlogFilterDTO;
-use App\Modules\Blog\Application\Enums\View\ViewTypeEnum;
-use App\Modules\Blog\Http\Resources\Api\Blog\BlogResource as ApiBlogResource;
-use App\Modules\Blog\Http\Resources\Api\Blog\BlogDetailResource as ApiBlogDetailResource;
-use App\Modules\Blog\Infrastructure\Persistence\Repositories\Hashtag\HashtagRepository;
-use Illuminate\Support\Facades\Log;
+use App\Modules\Blog\Application\DTOS\Hashtag\HashtagDTO;
+use App\Modules\Blog\Infrastructure\Persistence\Repositories\Blog\BlogRepository;
+
+
 
 class BlogUseCase
 {
 
     protected $blogRepository;
-    protected $employee;
-    protected $blogHashtagsRepository;
-    protected $hashtagRepository;
+    protected $auth;
+
     public function __construct(BlogRepository $blogRepository)
     {
         $this->blogRepository = $blogRepository;
-        $this->hashtagRepository = new HashtagRepository();
-        $this->blogHashtagsRepository = new BlogHashtagsRepository();
-        $this->employee = AuthHolder::getInstance()->getAuth(AuthGurdTypeEnum::EMPLOYEE->value);
+        // dd(AuthGurdTypeEnum::EMPLOYEE->value);
+        $this->auth = AuthHolder::getInstance()->getUser(AuthGurdTypeEnum::EMPLOYEE->value);
+//        dd($this->auth);
+
     }
 
-    public function fetchBlogs(BlogFilterDTO $blogFilterDto, $view = ViewTypeEnum::DASHBOARD->value): DataStatus
+    public function fetchBlogs(BlogFilterDTO $blogFilterDTO): DataStatus
     {
         try {
-            // dd($blogFilterDto);
-            // build whereHas relations if category_id or hashtag_id provided
-            $whereHasRelations = [];
-            if (isset($blogFilterDto->category_id) && filled($blogFilterDto->category_id)) {
-                // qualify the column to avoid ambiguous `id` when joining
-                $whereHasRelations['categories'] = ['categories.id' => $blogFilterDto->category_id];
-            }
-            if (isset($blogFilterDto->hashtag_id) && filled($blogFilterDto->hashtag_id)) {
-                // qualify the column to avoid ambiguous `id` when joining
-                $whereHasRelations['hashtags'] = ['hashtags.id' => $blogFilterDto->hashtag_id];
-            }
-
-            $blogs = $this->blogRepository->filter(
-                $blogFilterDto,
-                operator: 'like',
-                translatableFields: ['title', 'description'],
-                paginate: $blogFilterDto->paginate,
-                limit: $blogFilterDto->limit,
-                whereHasRelations: $whereHasRelations
-            );
-            // dd($blogs);
-            if (is_null($blogs)) {
-                $blogs = collect();
-            }
-            $resource = $this->HandelBlogResource(
-                $blogs,
-                $view,
-                $blogFilterDto->paginate
-            );
-            return DataSuccess(
-                status: true,
-                message: 'Blogs fetched successfully',
-                data: $blogFilterDto->paginate ? $resource->response()->getData() : $resource
-            );
-        } catch (\Exception $e) {
-            return DataFailed(
-                status: false,
-                message: $e->getMessage()
-            );
-        }
-    }
-
-
-    public function fetchBlogDetails(BlogFilterDTO $blogFilterDto, $view = ViewTypeEnum::DASHBOARD->value): DataStatus
-    {
-        try {
-            if (isset($blogFilterDto->slug)) {
-                $blog = $this->blogRepository->getModel()
-                    ->where('slug', $blogFilterDto->slug)
-                    ->first();
-
-                if (!$blog) {
-                    throw new \Exception('Blog not found with the provided slug');
-                }
-            } else if (isset($blogFilterDto->blog_id)) {
-                $blog = $this->blogRepository->getById($blogFilterDto->blog_id);
-            } else {
-                throw new \Exception('Either blog_id or slug must be provided');
-            }
-
-            $resource = $this->HandelBlogDetailResource(
-                $blog,
-                $view,
-                false
-            );
+            // dd($blogFilterDTO->whereHasRelations());
+          if (!empty($blogFilterDTO->whereHasRelations())) {
+              $blogs = $this->blogRepository->filter(
+                  $blogFilterDTO,
+                  operator: 'like',
+                  translatableFields: ['title'],
+                  paginate: $blogFilterDTO->paginate,
+                  limit: $blogFilterDTO->limit,
+                  whereHasRelations: $blogFilterDTO->whereHasRelations(),
+              );
+          } else {
+              $blogs = $this->blogRepository->filter(
+                  $blogFilterDTO,
+                  operator: 'like',
+                  translatableFields: ['title'],
+                  paginate: $blogFilterDTO->paginate,
+                  limit: $blogFilterDTO->limit,
+              );
+          }
+            $resource = $blogFilterDTO->paginate ? BlogResource::collection($blogs)->response()->getData(true) : BlogResource::collection($blogs);
             return DataSuccess(
                 status: true,
                 message: 'Blog fetched successfully',
-                data: $resource
+                data: $resource,
             );
         } catch (\Exception $e) {
             return DataFailed(
@@ -113,28 +64,72 @@ class BlogUseCase
             );
         }
     }
+    public function fetchLatestBlogs(BlogFilterDTO $blogFilterDTO): DataStatus
+    {
+        try {
+            $blogs = $this->blogRepository->filter(
+                $blogFilterDTO,
+                operator: 'like',
+                translatableFields: ['title'],
+                paginate: $blogFilterDTO->paginate,
+                limit: $blogFilterDTO->limit,
+
+            )->sortByDesc('created_at')->take($blogFilterDTO->limit);
+            $resource = $blogFilterDTO->paginate ? BlogResource::collection($blogs)->response()->getData(true) : BlogResource::collection($blogs);
+            return DataSuccess(
+                status: true,
+                message: 'Blog fetched successfully',
+                data: $resource,
+            );
+        } catch (\Exception $e) {
+            return DataFailed(
+                status: false,
+                message: $e->getMessage()
+            );
+        }
+    }
+
+
+    public function fetchBlogDetails(BlogFilterDTO $blogFilterDTO): DataStatus
+    {
+        try {
+            if ($blogFilterDTO->blog_id) {
+                $blog = $this->blogRepository->getWhere('id', $blogFilterDTO->blog_id, 'first');
+            } elseif ($blogFilterDTO->slug) {
+                $blog = $this->blogRepository->getWhere('slug', $blogFilterDTO->slug, 'first');
+            }
+            return DataSuccess(
+                status: true,
+                message: 'Course Blog fetched successfully',
+                data: new BlogResource($blog)
+            );
+        } catch (\Exception $e) {
+            return DataFailed(
+                status: false,
+                message: $e->getMessage()
+            );
+        }
+    }
+
+
 
     public function createBlog(BlogDTO $blogDTO): DataStatus
     {
         try {
-            $blogDTO->created_by = $this->employee->id;
             $blog = $this->blogRepository->create($blogDTO);
-            $blog->refresh();
-            // dd($blog);
-            // hashtags
-            if (!empty($blogDTO->hashtag_ids)) {
-                $blog->hashtags()->sync($blogDTO->hashtag_ids);
-            }
 
-            // categories
-            if (!empty($blogDTO->category_ids)) {
-                $blog->categories()->sync($blogDTO->category_ids);
-            }
+            $hashtag = HashtagDTO::fromArray($blogDTO->hashtags);
 
+            if ($blogDTO->hashtags && count($blogDTO->hashtags) > 0) {
+                $blog->hashtags()->attach($blogDTO->hashtags);
+            }
+            if ($blogDTO->categories && count($blogDTO->categories) > 0)  {
+                $blog->categories()->attach($blogDTO->categories);
+            }
             return DataSuccess(
                 status: true,
-                message: 'Blog created successfully',
-                data: new BlogResource($blog->load(['hashtags', 'categories']))
+                message: ' Blog created successfully',
+                data: new BlogResource($blog)
             );
         } catch (\Exception $e) {
             return DataFailed(
@@ -143,33 +138,21 @@ class BlogUseCase
             );
         }
     }
-
-
 
     public function updateBlog(BlogDTO $blogDTO): DataStatus
     {
         try {
             $blog = $this->blogRepository->update($blogDTO->blog_id, $blogDTO);
-            // $blog->refresh();
-
-            // Sync hashtags
-            if (!empty($blogDTO->hashtag_ids)) {
-                $blog->hashtags()->sync($blogDTO->hashtag_ids);
-            } else {
-                $blog->hashtags()->detach();
+            if ($blogDTO->hashtags) {
+                $blog->hashtags()->sync($blogDTO->hashtags);
             }
-
-            // Sync categories
-            if (!empty($blogDTO->category_ids)) {
-                $blog->categories()->sync($blogDTO->category_ids);
-            } else {
-                $blog->categories()->detach();
+            if ($blogDTO->categories) {
+                $blog->categories()->sync($blogDTO->categories);
             }
-
             return DataSuccess(
                 status: true,
-                message: 'Blog updated successfully',
-                data: new BlogResource($blog->load(['hashtags', 'categories']))
+                message: ' Blog updated successfully',
+                data: new BlogResource($blog)
             );
         } catch (\Exception $e) {
             return DataFailed(
@@ -179,63 +162,19 @@ class BlogUseCase
         }
     }
 
-
-    public function deleteBlog(BlogFilterDTO $blogFilterDto): DataStatus
+    public function deleteBlog(BlogFilterDTO $blogFilterDTO): DataStatus
     {
         try {
-            /** @var Blog|null $blog */
-            $blog = $this->blogRepository->getById($blogFilterDto->blog_id);
-
-            if (!$blog) {
-                return DataFailed(
-                    status: false,
-                    statusCode: 404,
-                    message: 'Blog not found'
-                );
-            }
-
-            if ($blog->children && $blog->children->count() > 0) {
-                return DataFailed(
-                    status: false,
-                    statusCode: 400,
-                    message: 'Blog has children'
-                );
-            }
-
-            $this->blogRepository->delete($blogFilterDto->blog_id);
-
+            $blog = $this->blogRepository->delete($blogFilterDTO->blog_id);
             return DataSuccess(
                 status: true,
-                message: 'Blog deleted successfully',
+                message: ' Blog deleted successfully',
             );
         } catch (\Exception $e) {
             return DataFailed(
                 status: false,
                 message: $e->getMessage()
             );
-        }
-    }
-
-    private function HandelBlogResource($blogs, $viewType, $paginate)
-    {
-        $blogs = $blogs ?? collect();
-        if ($viewType == ViewTypeEnum::DASHBOARD->value) {
-            return BlogResource::collection($blogs);
-        } elseif ($viewType == ViewTypeEnum::MOBILE->value) {
-            return ApiBlogResource::collection($blogs);
-        } else {
-            return BlogResource::collection($blogs);
-        }
-    }
-
-    public function HandelBlogDetailResource($blog, $viewType, $paginate)
-    {
-        if ($viewType == ViewTypeEnum::DASHBOARD->value) {
-            return BlogDetailResource::make($blog);
-        } elseif ($viewType == ViewTypeEnum::MOBILE->value) {
-            return ApiBlogDetailResource::make($blog);
-        } else {
-            return BlogDetailResource::make($blog);
         }
     }
 }

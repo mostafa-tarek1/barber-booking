@@ -1,21 +1,26 @@
 <?php
 
-use App\Modules\Blog\Http\Controllers\Api\Blog\BlogController;
-use App\Modules\Blog\Http\Controllers\Api\Category\CategoryController;
-use App\Modules\Blog\Http\Controllers\Api\Hashtag\HashtagController;
 use Illuminate\Support\Facades\Route;
+use App\Modules\Base\Http\Controllers\Base\BaseController;
+use App\Modules\Blog\Http\Controllers\Blog\Api\BlogController;
+use App\Modules\Blog\Http\Controllers\Hashtag\Api\HashtagController;
+use App\Modules\Blog\Http\Controllers\Category\Api\CategoryController;
 
+Route::prefix('api/website/v1/')->group(function () {
 
-Route::prefix('api')->group(function () {
-        // Blog routes
-        Route::post('fetch_blogs', [BlogController::class, 'fetchBlogs']);
-        Route::post('fetch_blog_details', [BlogController::class, 'fetchBlogDetails']);
+    Route::controller(BlogController::class)->group(function () {
+        Route::post('fetch_blogs', 'fetchBlogs');
+        Route::post('fetch_latest_blogs', 'fetchLatestBlogs');
+        Route::post('fetch_blog_details', 'fetchBlogDetails');
+    });
 
-        // Hashtag routes
-        Route::post('fetch_hashtags', [HashtagController::class, 'fetchHashtags']);
-        Route::post('fetch_hashtag_details', [HashtagController::class, 'fetchHashtagDetails']);
+    Route::controller(HashtagController::class)->group(function () {
+        Route::post('fetch_hashtags', 'fetchHashtags');
+        Route::post('fetch_latest_hashtags', 'fetchLatestHashtags');
+    });
 
-        // Category routes
-        Route::post('fetch_categories', [CategoryController::class, 'fetchCategories']);
-        Route::post('fetch_category_details', [CategoryController::class, 'fetchCategoryDetails']);
+    Route::controller(CategoryController::class)->group(function () {
+        Route::post('fetch_categories', 'fetchCategories');
+        Route::post('fetch_latest_categories', 'fetchLatestCategories');
+    });
 });

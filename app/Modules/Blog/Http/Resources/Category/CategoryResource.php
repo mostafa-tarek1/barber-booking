@@ -2,7 +2,6 @@
 
 namespace App\Modules\Blog\Http\Resources\Category;
 
-use App\Modules\Auth\Http\Resources\Admin\AdminResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -16,19 +15,12 @@ class CategoryResource extends JsonResource
     public function toArray(Request $request): array
     {
 
-        $title = $request->header('Accept-Language')  !== "*" ? getTranslation('title', $request->header('Accept-Language'), $this) : getTranslationAndLocale($this?->translations, 'title');
-
-        $titles =  getTranslationAndLocale($this?->translations, 'title');
-
+        $title = $request->header('Accept-Language') !== "*" ? getTranslation('title', $request->header('Accept-Language'), $this) : getTranslationAndLocale($this?->translations, 'title');
         return [
             'id' => $this->id,
-            'parent_id' => $this->parent_id,
-            'is_active' => boolval($this->is_active),
-            "slug" => $this->slug ?? '',
+            is_array($title) ? 'titles' : 'title' => $title,
             'image' => $this->image_link,
-            "created_at" => $this->created_at->toDateTimeString(),
-            'titles' => $title ? $titles : [],
-            'created_by' => new AdminResource($this->creator),
+
         ];
     }
 }

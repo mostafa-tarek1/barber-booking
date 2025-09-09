@@ -9,12 +9,10 @@ class HashtagTranslation extends Model
 {
     use HasFactory;
     public $timestamps = false;
-
     protected $table = 'hashtag_translations';
-    protected $fillable = ['title'];
-
-    public function hashtag()
-    {
-        return $this->belongsTo(Hashtag::class);
-    }
+    protected $fillable = [
+        'hashtag_id',
+        'locale',
+        'title',
+    ];
 }

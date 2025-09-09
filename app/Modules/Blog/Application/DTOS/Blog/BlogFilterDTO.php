@@ -2,23 +2,19 @@
 
 namespace App\Modules\Blog\Application\DTOS\Blog;
 
+
 use App\Modules\Base\Domain\DTO\BaseDTOAbstract;
 
 class BlogFilterDTO extends BaseDTOAbstract
 {
-    protected bool $excludeAttributes = true;
     public $blog_id;
-    public $title;
-    public $word;
-    public $parent_id;
-    public $category_id;
-    public $hashtag_id;
-    public $limit;
-    public $paginate;
-    public $created_by;
+    public $organization_id;
+    public $translations;
+    public $image;
     public $slug;
-    public $description;
-    public $duration_id;
+    public $hashtags;
+    public $categories;
+    public $title;
     public function __construct(array $data = [])
     {
         parent::__construct($data);
@@ -27,12 +23,24 @@ class BlogFilterDTO extends BaseDTOAbstract
     public function excludedAttributes(): array
     {
         return [
-            'excludeAttributes',
-            'limit',
-            'paginate',
-            'word',
-            'category_id',
-            'hashtag_id',
-        ];
+            'hashtags',
+            'categories',
+        ]; // Default empty array
     }
+
+    public function whereHasRelations(): array
+    {
+        $conditions = [];
+
+        if (!empty($this->hashtags)) {
+            $conditions['hashtags'] = ['hashtags.id' => $this->hashtags];
+        }
+
+        if (!empty($this->categories)) {
+            $conditions['categories'] = ['categories.id' => $this->categories];
+        }
+
+        return $conditions;
+    }
+
 }
