@@ -2,13 +2,13 @@
 
 namespace App\Modules\Blog\Infrastructure\Persistence\Models\Blog;
 
+use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Model;
 use Astrotomic\Translatable\Translatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Modules\Blog\Infrastructure\Persistence\Models\Hashtag\Hashtag;
 use App\Modules\Blog\Infrastructure\Persistence\Models\Category\Category;
-use App\Modules\Organization\Infrastructure\Persistence\Models\Employee;
 use Astrotomic\Translatable\Contracts\Translatable as TranslatableContract;
 
 class Blog extends Model implements TranslatableContract
@@ -17,7 +17,6 @@ class Blog extends Model implements TranslatableContract
     use Translatable;
     protected $fillable = [
         'image',
-        'organization_id',
         'slug',
         'author',
 

@@ -13,7 +13,6 @@ return new class extends Migration
     {
         Schema::create('blogs', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('organization_id')->nullable();
             $table->string('slug')->nullable();
             $table->string('image')->nullable();
             $table->timestamps();
@@ -38,6 +37,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('stages');
+        Schema::dropIfExists('blogs');
+        Schema::dropIfExists('blog_translations');
     }
 };

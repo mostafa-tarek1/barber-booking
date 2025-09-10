@@ -13,7 +13,6 @@ return new class extends Migration
     {
         Schema::create('categories', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('organization_id')->nullable();
             $table->string('slug')->nullable();
             $table->string('image')->nullable();
             $table->timestamps();
@@ -37,5 +36,6 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('categories');
+        Schema::dropIfExists('category_translations');
     }
 };

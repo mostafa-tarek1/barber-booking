@@ -16,7 +16,6 @@ class Category extends Model implements TranslatableContract
     use Translatable;
     protected $fillable = [
         'image',
-        'organization_id',
     ];
     public $translatedAttributes = ['title'];
     protected $translationForeignKey = 'category_id';
