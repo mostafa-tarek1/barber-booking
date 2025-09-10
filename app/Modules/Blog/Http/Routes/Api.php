@@ -6,7 +6,7 @@ use App\Modules\Blog\Http\Controllers\Blog\Api\BlogController;
 use App\Modules\Blog\Http\Controllers\Hashtag\Api\HashtagController;
 use App\Modules\Blog\Http\Controllers\Category\Api\CategoryController;
 
-Route::prefix('api/website/v1/')->group(function () {
+Route::prefix('website')->group(function () {
 
     Route::controller(BlogController::class)->group(function () {
         Route::post('fetch_blogs', 'fetchBlogs');

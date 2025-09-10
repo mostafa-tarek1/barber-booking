@@ -7,7 +7,7 @@ use App\Modules\Blog\Http\Controllers\Hashtag\Dashboard\HashtagController;
 use App\Modules\Blog\Http\Controllers\Category\Dashboard\CategoryController;
 
 
-Route::prefix('api/dashboard/v1/')->middleware('baseAuthMiddleware:employee')->group(function () {
+Route::prefix('dashboard')->middleware('baseAuthMiddleware:employee')->group(function () {
 
     Route::controller(BlogController::class)->group(function () {
         Route::post('fetch_blogs', 'fetchBlogs');
