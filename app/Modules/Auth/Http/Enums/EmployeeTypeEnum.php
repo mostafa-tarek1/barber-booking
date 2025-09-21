@@ -8,4 +8,5 @@ enum EmployeeTypeEnum: string
     case EMPLOYEE = 'employee';
     case ADMIN = 'admin';
     case SUPER_ADMIN = 'super_admin';
+    case BARBER = 'barber';
 }
