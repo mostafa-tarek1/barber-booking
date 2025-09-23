@@ -12,8 +12,21 @@ class Service extends Model implements TranslatableContract
     use Translatable;
     use HasFactory;
 
-    public $translatedAttributes = [];
+    public $translatedAttributes = ['name', 'description'];
 
     protected $table = 'services';
-    protected $fillable = [];
+    protected $fillable = ['price', 'duration', 'image', 'is_active'];
+
+    /**
+     * The bookings that belong to the service.
+     */
+    // public function bookings(): BelongsToMany
+    // {
+    //     return $this->belongsToMany(
+    //         Booking::class,
+    //         'booking_service',
+    //         'service_id',
+    //         'booking_id'
+    //     )->withPivot(['quantity', 'price'])->withTimestamps();
+    // }
 }

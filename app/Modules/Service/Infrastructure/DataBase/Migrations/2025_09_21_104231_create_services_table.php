@@ -14,13 +14,13 @@ return new class extends Migration
         Schema::create('services', function (Blueprint $table) {
             $table->id();
             $table->decimal('price', 8, 2)->default(0);
-            $table->integer('duration')->default(30); 
+            $table->integer('duration')->default(30);
             $table->string('image')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });
 
-        Schema::create('services_translations', function (Blueprint $table) {
+        Schema::create('service_translations', function (Blueprint $table) {
             $table->id();
             $table->foreignId('service_id')->constrained('services')->onDelete('cascade');
             $table->string('locale')->index();
@@ -37,7 +37,7 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::dropIfExists('service_translations');
         Schema::dropIfExists('services');
-        Schema::dropIfExists('services_translations');
     }
 };
