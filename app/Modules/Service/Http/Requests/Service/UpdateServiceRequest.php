@@ -13,11 +13,6 @@ class UpdateServiceRequest extends BaseRequestAbstract
     protected $service_id;
     protected $dtoClass = ServiceDTO::class;
 
-    public function __construct($service_id)
-    {
-        $this->service_id = $service_id;
-    }
-
     public function authorize(): bool
     {
         return true;
