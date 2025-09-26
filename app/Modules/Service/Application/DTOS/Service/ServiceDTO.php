@@ -8,6 +8,7 @@ class ServiceDTO extends BaseDTOAbstract
 {
     protected bool $excludeAttributes = true;
     public $translations;
+    public $service_id;
     public $name;
     public $price;
     public $duration;
