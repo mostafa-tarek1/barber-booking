@@ -174,6 +174,10 @@ class Employee extends Authenticatable implements AuthHolderInterface
             ->withTimestamps();
     }
 
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
+    }
 
     /**
      * Send OTP to this user via email or WhatsApp.

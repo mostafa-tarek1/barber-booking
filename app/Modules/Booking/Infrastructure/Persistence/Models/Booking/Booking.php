@@ -21,7 +21,7 @@ class Booking extends Model implements TranslatableContract
         'name',
         'phone',
         'email',
-        'booking_date',
+        'date',
         'from_hour',
         'to_hour',
         'status',
@@ -30,7 +30,7 @@ class Booking extends Model implements TranslatableContract
     ];
 
     protected $casts = [
-        'booking_date' => 'datetime',
+        'date' => 'datetime',
         'from_hour' => 'datetime',
         'to_hour' => 'datetime',
     ];
@@ -42,7 +42,7 @@ class Booking extends Model implements TranslatableContract
             'booking_service',
             'booking_id',
             'service_id'
-        )->withPivot('employee_id') 
+        )->withPivot('employee_id')
             ->withTimestamps();
     }
 

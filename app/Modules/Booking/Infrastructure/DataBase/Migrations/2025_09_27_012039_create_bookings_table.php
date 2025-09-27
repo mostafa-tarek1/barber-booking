@@ -15,10 +15,10 @@ return new class extends Migration {
             $table->string('name')->nullable();
             $table->string('phone')->nullable();
             $table->string('email')->nullable();
-            $table->dateTime('booking_date');
+            $table->date('date')->nullable();
             $table->time('from_hour')->nullable();
             $table->time('to_hour')->nullable();
-            $table->enum('status', ['pending', 'confirmed', 'cancelled', 'finished'])->default('pending');
+            $table->unsignedBigInteger('status')->default(0)->comment('0 => pending, 1 => confirmed, 2 => cancelled, 3 => finished')->nullable();
             $table->unsignedBigInteger('created_by')->nullable();
             $table->foreign('created_by')->references('id')->on('employees')->onDelete('cascade');
             $table->unsignedBigInteger('updated_by')->nullable();
