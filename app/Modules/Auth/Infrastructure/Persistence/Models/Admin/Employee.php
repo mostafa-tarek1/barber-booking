@@ -18,8 +18,10 @@ use App\Modules\Auth\Infrastructure\Persistence\Repositories\Admin\EmployeeRepos
 use App\Modules\Blog\Infrastructure\Persistence\Models\Blog\Blog;
 use App\Modules\Blog\Infrastructure\Persistence\Models\Category\Category;
 use App\Modules\Blog\Infrastructure\Persistence\Models\Hashtag\Hashtag;
+use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
 use App\Modules\Rooms\Infrastructure\Persistence\Models\Room\Room;
 use App\Modules\Rooms\Infrastructure\Persistence\Models\RoomLocation\RoomLocation;
+use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 
 
@@ -135,7 +137,7 @@ class Employee extends Authenticatable implements AuthHolderInterface
     {
         return $this->hasMany(Hashtag::class, 'created_by');
     }
-        public function createdCategories()
+    public function createdCategories()
     {
         return $this->hasMany(Category::class, 'created_by');
     }
@@ -145,15 +147,33 @@ class Employee extends Authenticatable implements AuthHolderInterface
         return $this->hasMany(Blog::class, 'created_by');
     }
 
-    public function createRooms()
+    public function createdBookings()
     {
-        return $this->hasMany(Room::class, 'created_by');
+        return $this->hasMany(
+            Booking::class,
+            'created_by'
+        );
     }
 
-        public function createRoomLocations()
+    public function updatedBookings()
     {
-        return $this->hasMany(RoomLocation::class, 'created_by');
+        return $this->hasMany(
+            Booking::class,
+            'updated_by'
+        );
     }
+
+    public function bookingServices()
+    {
+        return $this->belongsToMany(
+            Service::class,
+            'booking_service',
+            'employee_id',
+            'service_id'
+        )->withPivot('booking_id')
+            ->withTimestamps();
+    }
+
 
     /**
      * Send OTP to this user via email or WhatsApp.

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Service\Infrastructure\Persistence\Models\Service;
 
+use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
 use Illuminate\Database\Eloquent\Model;
 use Astrotomic\Translatable\Contracts\Translatable as TranslatableContract;
 use Astrotomic\Translatable\Translatable;
@@ -34,13 +35,16 @@ class Service extends Model implements TranslatableContract
         );
     }
 
-    // public function bookings(): BelongsToMany
-    // {
-    //     return $this->belongsToMany(
-    //         Booking::class,
-    //         'booking_service',
-    //         'service_id',
-    //         'booking_id'
-    //     )->withPivot(['quantity', 'price'])->withTimestamps();
-    // }
+    public function bookings()
+    {
+        return $this->belongsToMany(
+            Booking::class,
+            'booking_service',
+            'service_id',
+            'booking_id'
+        )->withPivot('employee_id')
+            ->withTimestamps();
+    }
+
+
 }
