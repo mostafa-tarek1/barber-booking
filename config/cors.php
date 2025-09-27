@@ -22,10 +22,10 @@ return [
     'allowed_methods' => ['*'],
 
     // Allow the frontend origin(s). Add your frontend domain(s) here.
-    'allowed_origins' => [
-        'http://localhost:8081',
-        env('FRONTEND_URL') ?: null,
-    ],
+    // 'allowed_origins' => [
+    //     'http://localhost:8081',
+    //     env('FRONTEND_URL') ?: null,
+    // ],
 
     'allowed_origins_patterns' => [],
 
