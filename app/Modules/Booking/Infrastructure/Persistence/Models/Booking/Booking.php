@@ -31,8 +31,8 @@ class Booking extends Model implements TranslatableContract
 
     protected $casts = [
         'date' => 'datetime',
-        'from_hour' => 'datetime',
-        'to_hour' => 'datetime',
+        'from_hour' => 'string',
+        'to_hour' => 'string',
     ];
 
     public function services()

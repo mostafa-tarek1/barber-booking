@@ -2,6 +2,7 @@
 
 namespace App\Modules\Booking\Application\UseCases\Booking;
 
+use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee as AdminEmployee;
 use App\Modules\Base\Domain\Holders\AuthHolder;
 use App\Modules\Base\Domain\Enums\AuthGurdTypeEnum;
 use App\Modules\Base\Application\Response\DataStatus;
@@ -102,6 +103,15 @@ class BookingUseCase
                 DB::rollBack();
                 return DataFailed(false, 'One or more selected services are invalid or inactive.');
             }
+            // 1.5- التحقق من الموظف
+            $employee = AdminEmployee::where('id', $bookingDTO->employee_id)
+                ->where('status', 'active')
+                ->first();
+
+            if (!$employee) {
+                DB::rollBack();
+                return DataFailed(false, 'Selected employee is inactive or does not exist.');
+            }
 
             // 2- حساب وقت النهاية من الـ duration
             $totalDuration = (int) $services->sum('duration');
@@ -109,7 +119,7 @@ class BookingUseCase
             $to = (clone $from)->addMinutes($totalDuration);
 
             $bookingDTO->to_hour = $to->format('H:i');
-            $bookingDTO->status = BookingStatusEnum::CONFIRMED->value;
+            $bookingDTO->status = BookingStatusEnum::PENDING->value;
 
             // 3- تحقق من تفرغ الموظف
             $isBusy = $this->bookingRepository->checkEmployeeAvailability(
