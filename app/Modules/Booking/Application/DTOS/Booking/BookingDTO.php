@@ -17,6 +17,7 @@ class BookingDTO extends BaseDTOAbstract
     public $created_by;
     public $updated_by;
     public $service_id;
+    public $services;
     public $employee_id;
 
 

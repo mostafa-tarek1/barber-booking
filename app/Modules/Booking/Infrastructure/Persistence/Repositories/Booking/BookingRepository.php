@@ -97,12 +97,11 @@ class BookingRepository extends BaseRepositoryAbstract
     public function checkEmployeeAvailability($employeeId, $date, $fromHour, $toHour, $excludeBookingId = null): bool
     {
         return $this->getModel()
-            ->whereHas('services', function ($q) use ($employeeId) {
-                $q->wherePivot('employee_id', $employeeId);
-            })
-            ->where('status', BookingStatusEnum::CONFIRMED->value)
-            ->whereDate('booking_date', $date)
-            ->when($excludeBookingId, fn($q) => $q->where('id', '!=', $excludeBookingId))
+            ->join('booking_service', 'bookings.id', '=', 'booking_service.booking_id')
+            ->where('booking_service.employee_id', $employeeId)
+            ->where('bookings.status', BookingStatusEnum::CONFIRMED->value)
+            ->whereDate('date', $date)
+            ->when($excludeBookingId, fn($q) => $q->where('bookings.id', '!=', $excludeBookingId))
             ->where(function ($q) use ($fromHour, $toHour) {
                 $q->whereBetween('from_hour', [$fromHour, $toHour])
                     ->orWhereBetween('to_hour', [$fromHour, $toHour])
@@ -135,7 +134,7 @@ class BookingRepository extends BaseRepositoryAbstract
             if (!$this->checkEmployeeAvailability($employeeId, $date, $slotStart, $slotEnd)) {
                 $slots[] = [
                     'from' => $slotStart,
-                    'to'   => $slotEnd,
+                    'to' => $slotEnd,
                 ];
             }
 

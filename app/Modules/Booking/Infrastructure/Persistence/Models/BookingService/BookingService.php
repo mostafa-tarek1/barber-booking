@@ -1,8 +1,9 @@
 <?php
 
-namespace App\Modules\Booking\Infrastructure\Persistence\Models\Booking;
+namespace App\Modules\Booking\Infrastructure\Persistence\Models\BookingService;
 
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
+use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
 use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 

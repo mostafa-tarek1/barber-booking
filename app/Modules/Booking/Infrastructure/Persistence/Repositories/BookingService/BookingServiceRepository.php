@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Modules\BookingService\Infrastructure\Persistence\Repositories\BookingService;
+namespace App\Modules\Booking\Infrastructure\Persistence\Repositories\BookingService;
 
-use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\BookingService;
 use App\Modules\Base\Domain\Repositories\BaseRepositoryAbstract;
+use App\Modules\Booking\Infrastructure\Persistence\Models\BookingService\BookingService;
 
 class BookingServiceRepository extends BaseRepositoryAbstract
 {
@@ -26,5 +26,18 @@ class BookingServiceRepository extends BaseRepositoryAbstract
     public function getByEmployee(int $employeeId)
     {
         return $this->getModel()->where('employee_id', $employeeId)->get();
+    }
+
+    /**
+     * Delete all booking services for a specific booking
+     */
+    public function delete(int $bookingId): bool
+    {
+        try {
+            return (bool) $this->getModel()->where('booking_id', $bookingId)->delete();
+        } catch (\Exception $e) {
+            report($e);
+            return false;
+        }
     }
 }
