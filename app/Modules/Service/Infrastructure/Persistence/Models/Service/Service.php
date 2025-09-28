@@ -38,6 +38,6 @@ class Service extends Model implements TranslatableContract
     public function bookings()
     {
         return $this->belongsToMany(Booking::class, 'booking_service', 'service_id', 'booking_id')
-            ->withPivot('employee_id');
+            ->withPivot(['employee_id', 'created_at', 'updated_at']);
     }
 }

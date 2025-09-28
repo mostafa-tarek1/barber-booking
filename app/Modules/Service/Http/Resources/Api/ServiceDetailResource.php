@@ -17,8 +17,12 @@ class ServiceDetailResource extends ServiceResource
 
         return array_merge($data, [
             'bookings_count'   => $this->bookings_count ?? $this->bookings()->count(),
-            'total_revenue'    => $this->total_revenue ?? $this->bookings()->sum('price'),
-            'last_booking_at'  => optional($this->bookings()->latest('pivot_created_at')->first())->pivot?->created_at?->toDateTimeString(),
+            'total_revenue'    => $this->total_revenue ?? $this->bookings()->with('services')
+                ->get()
+                ->sum(function ($booking) {
+                    return $booking->services->sum('price');
+                }),
+            'last_booking_at'  => optional($this->bookings()->latest('booking_service.created_at')->first())->pivot?->created_at?->toDateTimeString(),
         ]);
     }
 }
