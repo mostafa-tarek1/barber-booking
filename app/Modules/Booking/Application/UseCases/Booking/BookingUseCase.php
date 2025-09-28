@@ -2,6 +2,8 @@
 
 namespace App\Modules\Booking\Application\UseCases\Booking;
 
+use App\Modules\Booking\Infrastructure\Persistence\Models\BookingService\BookingService;
+
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee as AdminEmployee;
 use App\Modules\Base\Domain\Holders\AuthHolder;
 use App\Modules\Base\Domain\Enums\AuthGurdTypeEnum;
@@ -171,79 +173,130 @@ class BookingUseCase
     {
         DB::beginTransaction();
         try {
-            $bookingDTO->updated_by = $this->employee->id ?? null;
+            if (empty($bookingDTO->booking_id)) {
+                return DataFailed(false, 'Booking ID is required.');
+            }
 
             $booking = $this->bookingRepository->getById($bookingDTO->booking_id);
             if (!$booking) {
-                DB::rollBack();
-                return DataFailed(false, 'Booking not found.');
+                return DataFailed(false, 'Booking not found.', 404);
             }
 
-            // if services provided -> validate & compute new to_hour
-            if (!empty($bookingDTO->services)) {
-                $serviceIds = collect($bookingDTO->services)->pluck('id')->filter()->unique()->values()->toArray();
-                $services = Service::whereIn('id', $serviceIds)->where('is_active', 1)->get();
+            $bookingDTO->updated_by = $this->employee->id ?? null;
 
-                if ($services->isEmpty() || count($services) !== count($serviceIds)) {
-                    DB::rollBack();
+            // Process services if provided
+            $services = collect();
+            $totalDuration = 0;
+            
+            if (!empty($bookingDTO->services)) {
+                // Handle both array of IDs and array of objects
+                $serviceIds = collect($bookingDTO->services)
+                    ->map(function($item) {
+                        return is_array($item) ? ($item['id'] ?? $item) : $item;
+                    })
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->toArray();
+
+                if (empty($serviceIds)) {
+                    return DataFailed(false, 'No valid services provided.');
+                }
+
+                $services = Service::whereIn('id', $serviceIds)
+                    ->where('is_active', 1)
+                    ->get();
+
+                if ($services->isEmpty() || $services->count() !== count($serviceIds)) {
                     return DataFailed(false, 'One or more selected services are invalid or inactive.');
                 }
 
                 $totalDuration = (int) $services->sum('duration');
             } else {
-                // fallback to existing pivot durations sum (if you store durations) or first service duration
-                $existingServices = $booking->services ?? collect();
-                $totalDuration = (int) ($existingServices->sum('duration') ?: ($existingServices->first()->duration ?? 0));
-                $services = $existingServices;
+                // Use existing services if not provided in update
+                $services = $booking->services()->withPivot(['employee_id', 'created_at', 'updated_at'])->get();
+                if ($services->isEmpty()) {
+                    return DataFailed(false, 'No services found for this booking.');
+                }
+                $totalDuration = (int) $services->sum('duration');
             }
 
-            // determine from/time values (use incoming if provided, else current booking)
+            // Validate employee
+            $employeeId = $bookingDTO->employee_id ?? ($services->first()->pivot->employee_id ?? null);
+            
+            if (!$employeeId) {
+                return DataFailed(false, 'Employee is required for the booking.');
+            }
+
+            $employee = AdminEmployee::where('id', $employeeId)
+                ->where('status', 'active')
+                ->first();
+                
+            if (!$employee) {
+                return DataFailed(false, 'Selected employee is not available.');
+            }
+
+            // Handle date and time
             $date = $bookingDTO->date ?? $booking->booking_date;
             $fromHour = $bookingDTO->from_hour ?? $booking->from_hour;
-            $from = Carbon::parse("{$date} {$fromHour}");
-            $to = (clone $from)->addMinutes($totalDuration);
+            
+            try {
+                $from = Carbon::parse("{$date} {$fromHour}");
+                $to = (clone $from)->addMinutes($totalDuration);
+            } catch (\Exception $e) {
+                return DataFailed(false, 'Invalid date or time format.');
+            }
 
-            // check employee availability excluding current booking
-            $employeeId = $bookingDTO->employee_id ?? ($booking->services->first()->pivot->employee_id ?? null);
-
+            // Check employee availability
             $isBusy = $this->bookingRepository->checkEmployeeAvailability(
                 $employeeId,
                 $date,
                 $from->format('H:i:s'),
                 $to->format('H:i:s'),
-                $booking->id
+                $booking->id // Exclude current booking from availability check
             );
 
             if ($isBusy) {
-                DB::rollBack();
-                return DataFailed(false, 'Employee is already booked for this time range.');
+                return DataFailed(false, 'Employee is already booked for the selected time slot.');
             }
 
-            // update booking main fields
-            $booking->fill(array_merge($bookingDTO->toArray(), [
+            // Update booking with all fields from DTO
+            $updateData = [
                 'booking_date' => $date,
                 'from_hour' => $from->format('H:i'),
                 'to_hour' => $to->format('H:i'),
-            ]))->save();
+                'updated_by' => $bookingDTO->updated_by,
+                // Include name, phone, email if provided in DTO
+                'name' => $bookingDTO->name ?? $booking->name,
+                'phone' => $bookingDTO->phone ?? $booking->phone,
+                'email' => $bookingDTO->email ?? $booking->email,
+                // Update status if provided
+                'status' => $bookingDTO->status ?? $booking->status,
+            ];
 
-            // if services changed -> sync pivot
+            $booking->update($updateData);
+
+            // Update services if changed
             if (!empty($bookingDTO->services)) {
-                // remove old pivots
+                // Delete existing service associations
                 $this->bookingServiceRepository->delete($booking->id);
 
+                // Create new service associations
                 foreach ($services as $service) {
-                    $this->bookingServiceRepository->create(new BookingServiceDTO([
-                        'booking_id' => $booking->id,
-                        'service_id' => $service->id,
-                        'employee_id' => $employeeId,
-                        'duration' => $service->duration,
-                    ]));
+                    // First, create the booking service record directly
+                    // Note: The booking_service table doesn't have a duration column
+                    $bookingService = new BookingService();
+                    $bookingService->booking_id = $booking->id;
+                    $bookingService->service_id = $service->id;
+                    $bookingService->employee_id = $employeeId;
+                    $bookingService->save();
                 }
             }
 
             DB::commit();
 
-            $booking->load(['services', 'creator', 'updater']);
+            // Load relationships with the correct method names
+            $booking->load(['services', 'createdBy', 'updatedBy']);
             $resource = $this->handleBookingDetailResource($booking, $view);
 
             return DataSuccess(true, 'Booking updated successfully', $resource);
