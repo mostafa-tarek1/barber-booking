@@ -3,7 +3,7 @@
 namespace App\Modules\Booking\Application\UseCases\Booking;
 
 use App\Modules\Booking\Infrastructure\Persistence\Models\BookingService\BookingService;
-
+use App\Modules\Base\Application\Response\DataFailed;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee as AdminEmployee;
 use App\Modules\Base\Domain\Holders\AuthHolder;
 use App\Modules\Base\Domain\Enums\AuthGurdTypeEnum;
@@ -132,6 +132,15 @@ class BookingUseCase
             $from = Carbon::parse("{$bookingDTO->date} {$bookingDTO->from_hour}");
             $to = (clone $from)->addMinutes($totalDuration);
 
+            // Check if booking time is outside allowed hours (1 PM to 1 AM)
+            $startHour = $from->copy()->setTime(13, 0, 0); // 1:00 PM
+            $endHour = $from->copy()->addDay()->setTime(1, 0, 0); // 1:00 AM next day
+            
+            if ($from->lt($startHour) || $to->gt($endHour) || $to->lt($from)) {
+                DB::rollBack();
+                return DataFailed(false, 'يُسمح بالحجز من الساعة 1 ظهراً حتى 1 صباحاً فقط.');
+            }
+
             $bookingDTO->to_hour = $to->format('H:i');
             $bookingDTO->status = BookingStatusEnum::PENDING->value;
 
@@ -145,7 +154,41 @@ class BookingUseCase
 
             if ($isBusy) {
                 DB::rollBack();
-                return DataFailed(false, 'Employee is already booked for this time range.');
+                
+                // Get suggested time slots
+                $suggestedSlots = $this->getAvailableTimeSlots(
+                    $bookingDTO->employee_id,
+                    $bookingDTO->date,
+                    $from->format('H:i:s'),
+                    $to->format('H:i:s')
+                );
+
+                if (!empty($suggestedSlots)) {
+                    $formattedSlots = [];
+                    foreach ($suggestedSlots as $index => $slot) {
+                        $formattedSlots[] = sprintf(
+                            '%s. من %s إلى %s', 
+                            $index + 1,
+                            date('g:i A', strtotime($slot['from'])),
+                            date('g:i A', strtotime($slot['to']))
+                        );
+                    }
+                    
+                    return new DataFailed(
+                        [
+                            'message' => 'الموظف محجز بالفعل في هذا التوقيت.',
+                            'suggested_slots' => $formattedSlots
+                        ],
+                        false,
+                        400
+                    );
+                }
+
+                return new DataFailed(
+                    ['message' => 'الموظف محجز بالفعل في هذا التوقيت.'],
+                    false,
+                    400
+                );
             }
 
             // 4- إنشاء البوكينج
@@ -255,8 +298,17 @@ class BookingUseCase
             try {
                 $from = Carbon::parse("{$date} {$fromHour}");
                 $to = (clone $from)->addMinutes($totalDuration);
+                
+                // Check if booking time is outside allowed hours (1 PM to 1 AM)
+                $startHour = $from->copy()->setTime(13, 0, 0); // 1:00 PM
+                $endHour = $from->copy()->addDay()->setTime(1, 0, 0); // 1:00 AM next day
+                
+                if ($from->lt($startHour) || $to->gt($endHour) || $to->lt($from)) {
+                    return DataFailed(false, 'يُسمح بالحجز من الساعة 1 ظهراً حتى 1 صباحاً فقط.');
+                }
+                
             } catch (\Exception $e) {
-                return DataFailed(false, 'Invalid date or time format.');
+                return DataFailed(false, 'تنسيق التاريخ أو الوقت غير صالح.');
             }
 
             // Check employee availability
@@ -269,7 +321,42 @@ class BookingUseCase
             );
 
             if ($isBusy) {
-                return DataFailed(false, 'Employee is already booked for the selected time slot.');
+                // Get suggested time slots
+                $suggestedSlots = $this->getAvailableTimeSlots(
+                    $employeeId,
+                    $date,
+                    $from->format('H:i:s'),
+                    $to->format('H:i:s')
+                );
+
+                // Format the suggested slots as a string
+                $suggestedSlotsStr = '';
+                if (!empty($suggestedSlots)) {
+                    $formattedSlots = [];
+                    foreach ($suggestedSlots as $index => $slot) {
+                        $formattedSlots[] = sprintf(
+                            '%s. من %s إلى %s', 
+                            $index + 1,
+                            date('g:i A', strtotime($slot['from'])),
+                            date('g:i A', strtotime($slot['to']))
+                        );
+                    }
+                    
+                    return new DataFailed(
+                        [
+                            'message' => 'الموظف محجز بالفعل في هذا التوقيت.',
+                            'suggested_slots' => $formattedSlots
+                        ],
+                        false,
+                        400
+                    );
+                }
+
+                return new DataFailed(
+                    ['message' => 'الموظف محجز بالفعل في هذا التوقيت.'],
+                    false,
+                    400
+                );
             }
 
             // Update booking with all fields from DTO
@@ -361,5 +448,101 @@ class BookingUseCase
             ViewTypeEnum::MOBILE->value => ApiBookingDetailResource::make($booking),
             default => DashboardBookingDetailResource::make($booking),
         };
+    }
+
+    /**
+     * Get available time slots for an employee on a specific date
+     * 
+     * @param int $employeeId
+     * @param string $date
+     * @param string $fromTime
+     * @param string $toTime
+     * @param int $intervalMinutes
+     * @return array
+     */
+    public function getAvailableTimeSlots(
+        int $employeeId,
+        string $date,
+        string $fromTime,
+        string $toTime,
+        int $intervalMinutes = 30
+    ): array {
+        try {
+            // Get available slots for the whole working day
+            $availableSlots = $this->bookingRepository->getAvailableTimeSlots(
+                $employeeId,
+                $date
+            );
+
+            // If no available slots, return empty array
+            if (empty($availableSlots)) {
+                return [];
+            }
+
+            // Filter slots that match or overlap with the requested time range
+            $requestedStart = Carbon::parse($fromTime);
+            $requestedEnd = Carbon::parse($toTime);
+            $requestedDuration = $requestedStart->diffInMinutes($requestedEnd);
+
+            $suggestedSlots = [];
+            $processedTimes = [];
+
+            foreach ($availableSlots as $slot) {
+                $slotStart = Carbon::parse($slot['from']);
+                $slotEnd = $slotStart->copy()->addMinutes($requestedDuration);
+                $slotEndTime = $slotEnd->format('H:i:s');
+
+                // Skip if we've already processed this time
+                if (in_array($slot['from'], $processedTimes)) {
+                    continue;
+                }
+
+                // Check if this slot can accommodate the requested duration
+                $isAvailable = true;
+                $currentTime = $slotStart->copy();
+                $endCheckTime = $slotStart->copy()->addMinutes($requestedDuration);
+
+                while ($currentTime < $endCheckTime) {
+                    $checkEnd = $currentTime->copy()->addMinutes($intervalMinutes);
+                    $slotAvailable = false;
+
+                    foreach ($availableSlots as $s) {
+                        $sStart = Carbon::parse($s['from']);
+                        $sEnd = Carbon::parse($s['to']);
+
+                        if ($currentTime->between($sStart, $sEnd) && 
+                            $checkEnd->between($sStart, $sEnd)) {
+                            $slotAvailable = true;
+                            break;
+                        }
+                    }
+
+                    if (!$slotAvailable) {
+                        $isAvailable = false;
+                        break;
+                    }
+
+                    $currentTime->addMinutes($intervalMinutes);
+                }
+
+                if ($isAvailable) {
+                    $suggestedSlots[] = [
+                        'from' => $slot['from'],
+                        'to' => $slotEndTime,
+                    ];
+                    $processedTimes[] = $slot['from'];
+                }
+
+                // Limit the number of suggestions
+                if (count($suggestedSlots) >= 5) {
+                    break;
+                }
+            }
+
+            return $suggestedSlots;
+        } catch (\Exception $e) {
+            Log::error('Error getting available time slots: ' . $e->getMessage());
+            return [];
+        }
     }
 }

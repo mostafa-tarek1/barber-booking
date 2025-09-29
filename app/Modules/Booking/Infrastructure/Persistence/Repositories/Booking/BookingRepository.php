@@ -119,8 +119,8 @@ class BookingRepository extends BaseRepositoryAbstract
     public function getAvailableTimeSlots(
         int $employeeId,
         string $date,
-        string $workStart = '09:00',
-        string $workEnd = '18:00',
+        string $workStart = '13:00', // 1:00 PM
+        string $workEnd = '01:00',   // 1:00 AM next day
         int $intervalMinutes = 30
     ): array {
         $slots = [];

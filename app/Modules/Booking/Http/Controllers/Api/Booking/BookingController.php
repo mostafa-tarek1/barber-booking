@@ -24,4 +24,35 @@ class BookingController extends Controller
     {
         return $this->bookingUseCase->createBooking($request->toDTO(), ViewTypeEnum::MOBILE->value)->response();
     }
+
+    /**
+     * Check available time slots for an employee
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function checkAvailability(Request $request)
+    {
+        $request->validate([
+            'employee_id' => 'required|integer|exists:employees,id',
+            'date' => 'required|date',
+            'from_time' => 'required|date_format:H:i',
+            'to_time' => 'required|date_format:H:i|after:from_time',
+        ]);
+
+        $suggestedSlots = $this->bookingUseCase->getAvailableTimeSlots(
+            $request->employee_id,
+            $request->date,
+            $request->from_time,
+            $request->to_time
+        );
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Available time slots retrieved successfully',
+            'data' => [
+                'suggested_slots' => $suggestedSlots
+            ]
+        ]);
+    }
 }

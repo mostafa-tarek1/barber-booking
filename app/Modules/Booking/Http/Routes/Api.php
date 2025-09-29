@@ -6,4 +6,5 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('api')->group(function () {
         // ---------------- Bookings ----------------
         Route::post('create_booking', [BookingController::class, 'createBooking']);
+        Route::post('check_availability', [BookingController::class, 'checkAvailability']);
 });

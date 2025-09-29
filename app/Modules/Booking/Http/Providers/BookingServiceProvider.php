@@ -12,7 +12,16 @@ class BookingServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(
+            \App\Modules\Booking\Domain\Repositories\BookingRepositoryInterface::class,
+            \App\Modules\Booking\Infrastructure\Persistence\Repositories\Booking\BookingRepository::class
+        );
+        
+        $this->app->when(\App\Modules\Booking\Infrastructure\Persistence\Repositories\Booking\BookingRepository::class)
+            ->needs(\App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking::class)
+            ->give(function () {
+                return new \App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking();
+            });
     }
 
     /**
