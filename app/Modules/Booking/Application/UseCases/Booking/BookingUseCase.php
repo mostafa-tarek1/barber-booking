@@ -131,6 +131,7 @@ class BookingUseCase
             $totalDuration = (int) $services->sum('duration');
             $from = Carbon::parse("{$bookingDTO->date} {$bookingDTO->from_hour}");
             $to = (clone $from)->addMinutes($totalDuration);
+            $requestedDuration = $totalDuration; // Store the duration for later use
 
             // Check if booking time is outside allowed hours (1 PM to 1 AM)
             $startHour = $from->copy()->setTime(13, 0, 0); // 1:00 PM
@@ -155,37 +156,34 @@ class BookingUseCase
             if ($isBusy) {
                 DB::rollBack();
                 
-                // Get suggested time slots
-                $suggestedSlots = $this->getAvailableTimeSlots(
+                // Get suggested time slots from the repository
+                $suggestedSlots = $this->bookingRepository->getAvailableTimeSlots(
                     $bookingDTO->employee_id,
                     $bookingDTO->date,
-                    $from->format('H:i:s'),
-                    $to->format('H:i:s')
+                    '13:00', // 1:00 PM - Shift start
+                    '01:00', // 1:00 AM - Shift end (next day)
+                    $requestedDuration // Duration in minutes
                 );
 
+                // Prepare the response with the suggested slots
+                $response = [
+                    'message' => 'الموظف محجز بالفعل في هذا التوقيت.'
+                ];
+
                 if (!empty($suggestedSlots)) {
-                    $formattedSlots = [];
-                    foreach ($suggestedSlots as $index => $slot) {
-                        $formattedSlots[] = sprintf(
-                            '%s. من %s إلى %s', 
-                            $index + 1,
-                            date('g:i A', strtotime($slot['from'])),
-                            date('g:i A', strtotime($slot['to']))
-                        );
-                    }
-                    
-                    return new DataFailed(
-                        [
-                            'message' => 'الموظف محجز بالفعل في هذا التوقيت.',
-                            'suggested_slots' => $formattedSlots
-                        ],
-                        false,
-                        400
-                    );
+                    $response['suggested_slots'] = array_map(function($index, $slot) {
+                        return [
+                            'id' => $index + 1,
+                            'from' => Carbon::parse($slot['from'])->format('g:i A'),
+                            'to' => Carbon::parse($slot['to'])->format('g:i A'),
+                            'from_time' => $slot['from'],
+                            'to_time' => $slot['to']
+                        ];
+                    }, array_keys($suggestedSlots), array_values($suggestedSlots));
                 }
 
                 return new DataFailed(
-                    ['message' => 'الموظف محجز بالفعل في هذا التوقيت.'],
+                    $response,
                     false,
                     400
                 );
@@ -468,77 +466,123 @@ class BookingUseCase
         int $intervalMinutes = 30
     ): array {
         try {
+            Log::info('=== START: Getting available slots ===');
+            Log::info('Input parameters:', [
+                'employee_id' => $employeeId,
+                'date' => $date,
+                'from_time' => $fromTime,
+                'to_time' => $toTime,
+                'interval_minutes' => $intervalMinutes
+            ]);
+
             // Get available slots for the whole working day
             $availableSlots = $this->bookingRepository->getAvailableTimeSlots(
                 $employeeId,
                 $date
             );
 
+            Log::info('Available slots from repository:', [
+                'count' => is_array($availableSlots) ? count($availableSlots) : 'not an array',
+                'slots' => $availableSlots
+            ]);
+
             // If no available slots, return empty array
             if (empty($availableSlots)) {
+                Log::warning('No available slots found for employee ' . $employeeId . ' on date ' . $date);
                 return [];
             }
 
-            // Filter slots that match or overlap with the requested time range
+            // Parse the requested time range
             $requestedStart = Carbon::parse($fromTime);
             $requestedEnd = Carbon::parse($toTime);
             $requestedDuration = $requestedStart->diffInMinutes($requestedEnd);
 
+            Log::info('Requested booking details', [
+                'start' => $requestedStart->format('H:i:s'),
+                'end' => $requestedEnd->format('H:i:s'),
+                'duration_minutes' => $requestedDuration
+            ]);
+
             $suggestedSlots = [];
-            $processedTimes = [];
-
-            foreach ($availableSlots as $slot) {
-                $slotStart = Carbon::parse($slot['from']);
-                $slotEnd = $slotStart->copy()->addMinutes($requestedDuration);
-                $slotEndTime = $slotEnd->format('H:i:s');
-
-                // Skip if we've already processed this time
-                if (in_array($slot['from'], $processedTimes)) {
+            $workingStart = Carbon::parse('13:00:00'); // 1:00 PM
+            $workingEnd = Carbon::parse('01:00:00')->addDay(); // 1:00 AM next day
+            $currentSlot = Carbon::parse($date . ' ' . $workingStart->format('H:i:s'));
+            $endOfDay = Carbon::parse($date . ' ' . $workingEnd->format('H:i:s'));
+            
+            Log::info('Slot generation parameters:', [
+                'working_start' => $workingStart->format('H:i:s'),
+                'working_end' => $workingEnd->format('H:i:s'),
+                'current_slot' => $currentSlot->format('Y-m-d H:i:s'),
+                'end_of_day' => $endOfDay->format('Y-m-d H:i:s'),
+                'requested_duration' => $requestedDuration . ' minutes'
+            ]);
+            
+            $slotCounter = 0;
+            $maxSlotsToCheck = 100; // Safety limit to prevent infinite loops
+            
+            while ($currentSlot->lt($endOfDay) && $slotCounter < $maxSlotsToCheck) {
+                $slotCounter++;
+                $slotEnd = $currentSlot->copy()->addMinutes($requestedDuration);
+                
+                Log::debug('Checking slot #' . $slotCounter, [
+                    'current_slot' => $currentSlot->format('H:i:s'),
+                    'slot_end' => $slotEnd->format('H:i:s')
+                ]);
+                
+                // Skip if slot goes beyond working hours
+                if ($slotEnd->gt($endOfDay)) {
+                    Log::debug('Skipping slot - extends beyond working hours');
+                    $currentSlot->addMinutes($intervalMinutes);
                     continue;
                 }
 
-                // Check if this slot can accommodate the requested duration
                 $isAvailable = true;
-                $currentTime = $slotStart->copy();
-                $endCheckTime = $slotStart->copy()->addMinutes($requestedDuration);
-
-                while ($currentTime < $endCheckTime) {
-                    $checkEnd = $currentTime->copy()->addMinutes($intervalMinutes);
-                    $slotAvailable = false;
-
-                    foreach ($availableSlots as $s) {
-                        $sStart = Carbon::parse($s['from']);
-                        $sEnd = Carbon::parse($s['to']);
-
-                        if ($currentTime->between($sStart, $sEnd) && 
-                            $checkEnd->between($sStart, $sEnd)) {
-                            $slotAvailable = true;
-                            break;
-                        }
-                    }
-
-                    if (!$slotAvailable) {
+                $conflictingSlot = null;
+                
+                // Check if this slot is available
+                foreach ($availableSlots as $slot) {
+                    $slotStart = Carbon::parse($slot['from']);
+                    $slotEndTime = Carbon::parse($slot['to']);
+                    
+                    // Check for overlap
+                    if ($currentSlot->lt($slotEndTime) && $slotStart->lt($slotEnd)) {
                         $isAvailable = false;
+                        $conflictingSlot = [
+                            'from' => $slotStart->format('H:i:s'),
+                            'to' => $slotEndTime->format('H:i:s')
+                        ];
                         break;
                     }
-
-                    $currentTime->addMinutes($intervalMinutes);
                 }
 
                 if ($isAvailable) {
-                    $suggestedSlots[] = [
-                        'from' => $slot['from'],
-                        'to' => $slotEndTime,
+                    $newSlot = [
+                        'from' => $currentSlot->format('H:i:s'),
+                        'to' => $slotEnd->format('H:i:s'),
                     ];
-                    $processedTimes[] = $slot['from'];
-                }
-
-                // Limit the number of suggestions
-                if (count($suggestedSlots) >= 5) {
-                    break;
+                    
+                    $suggestedSlots[] = $newSlot;
+                    Log::debug('Added suggested slot', $newSlot);
+                    
+                    // Skip ahead to avoid overlapping suggestions
+                    $currentSlot = $slotEnd;
+                    
+                    // Limit the number of suggestions
+                    if (count($suggestedSlots) >= 5) {
+                        Log::info('Reached maximum number of suggested slots (5)');
+                        break;
+                    }
+                } else {
+                    Log::debug('Slot not available - conflicts with', $conflictingSlot);
+                    $currentSlot->addMinutes($intervalMinutes);
                 }
             }
-
+            
+            if ($slotCounter >= $maxSlotsToCheck) {
+                Log::warning('Reached maximum number of slot checks (' . $maxSlotsToCheck . ')');
+            }
+            
+            Log::info('Generated ' . count($suggestedSlots) . ' suggested time slots');
             return $suggestedSlots;
         } catch (\Exception $e) {
             Log::error('Error getting available time slots: ' . $e->getMessage());

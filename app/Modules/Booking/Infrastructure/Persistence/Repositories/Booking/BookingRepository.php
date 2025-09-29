@@ -121,24 +121,99 @@ class BookingRepository extends BaseRepositoryAbstract
         string $date,
         string $workStart = '13:00', // 1:00 PM
         string $workEnd = '01:00',   // 1:00 AM next day
-        int $intervalMinutes = 30
+        int $requestedDuration = 30   // Duration in minutes
     ): array {
         $slots = [];
         $start = Carbon::parse("$date $workStart");
         $end = Carbon::parse("$date $workEnd");
+        
+        // Handle next day end time (e.g., 01:00 AM next day)
+        if ($workEnd < $workStart) {
+            $end->addDay();
+        }
 
-        while ($start < $end) {
-            $slotStart = $start->format('H:i:s');
-            $slotEnd = $start->copy()->addMinutes($intervalMinutes)->format('H:i:s');
+        // Get all existing bookings for the employee on this date
+        $bookings = $this->getModel()
+            ->join('booking_service', 'bookings.id', '=', 'booking_service.booking_id')
+            ->where('booking_service.employee_id', $employeeId)
+            ->where('bookings.status', BookingStatusEnum::CONFIRMED->value)
+            ->whereDate('date', $date)
+            ->select(['bookings.*', 'booking_service.employee_id'])
+            ->get();
 
-            if (!$this->checkEmployeeAvailability($employeeId, $date, $slotStart, $slotEnd)) {
+        $current = $start->copy();
+        $slotCounter = 0;
+        
+        while ($current < $end && $slotCounter < 100) { // Safety limit
+            $slotCounter++;
+            
+            $slotStart = $current->format('H:i:s');
+            $slotEnd = $current->copy()->addMinutes($requestedDuration);
+            $slotEndFormatted = $slotEnd->format('H:i:s');
+            
+            // Skip if slot goes beyond working hours
+            if ($slotEnd > $end) {
+                $current->addMinutes(15);
+                continue;
+            }
+            
+            // Check if this slot conflicts with any existing bookings
+            $isAvailable = true;
+            $slotStartTime = Carbon::parse("$date $slotStart");
+            $slotEndTime = Carbon::parse("$date $slotEndFormatted");
+            $conflictingBookingEnd = null;
+            
+            // Skip if slot is invalid (end before or equal to start)
+            if ($slotEndTime <= $slotStartTime) {
+                $current->addMinutes(15);
+                continue;
+            }
+            
+            foreach ($bookings as $booking) {
+                $bookingStart = Carbon::parse("$date {$booking->from_hour}");
+                $bookingEnd = Carbon::parse("$date {$booking->to_hour}");
+                
+                // If the booking ends the next day, adjust the end time
+                if ($bookingEnd < $bookingStart) {
+                    $bookingEnd->addDay();
+                }
+                
+                // Check for any overlap between the slot and the booking
+                // This single condition covers all possible overlap cases
+                $hasOverlap = ($slotStartTime < $bookingEnd && $slotEndTime > $bookingStart);
+                
+                if ($hasOverlap) {
+                    $isAvailable = false;
+                    // Track the end time of the latest conflicting booking
+                    if ($conflictingBookingEnd === null || $bookingEnd > $conflictingBookingEnd) {
+                        $conflictingBookingEnd = $bookingEnd->copy();
+                    }
+                    break;
+                }
+            }
+            
+            if ($isAvailable) {
                 $slots[] = [
                     'from' => $slotStart,
-                    'to' => $slotEnd,
+                    'to' => $slotEndFormatted,
                 ];
+                
+                // Skip ahead to the next potential slot
+                $current = $slotEnd;
+            } else {
+                // Skip to the end of the conflicting booking
+                if ($conflictingBookingEnd) {
+                    $current = $conflictingBookingEnd->copy();
+                } else {
+                    // Fallback: move forward by 15 minutes
+                    $current->addMinutes(15);
+                }
             }
-
-            $start->addMinutes($intervalMinutes);
+            
+            // Limit the number of suggestions
+            if (count($slots) >= 5) {
+                break;
+            }
         }
 
         return $slots;

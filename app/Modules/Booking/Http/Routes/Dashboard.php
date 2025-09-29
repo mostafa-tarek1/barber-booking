@@ -11,5 +11,6 @@ Route::prefix('dashboard')->group(function () {
         Route::post('create_booking', [BookingController::class, 'createBooking']);
         Route::post('update_booking', [BookingController::class, 'updateBooking']);
         Route::post('delete_booking', [BookingController::class, 'deleteBooking']);
+        Route::post('check_availability', [BookingController::class, 'checkAvailability']);
     });
 });
