@@ -77,6 +77,18 @@ class BookingUseCase
                 return DataFailed(false, 'Booking not found');
             }
 
+            // Load the relationships with the pivot data
+            $booking->load(['services' => function($query) {
+                $query->withPivot(['employee_id']);
+            }]);
+            
+            // Get the employee from the first service if available
+            if ($booking->services->isNotEmpty()) {
+                $employeeId = $booking->services->first()->pivot->employee_id;
+                $employee = \App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee::find($employeeId);
+                $booking->setRelation('employee', $employee);
+            }
+            
             $resource = $this->handleBookingDetailResource($booking, $view);
 
             return DataSuccess(true, 'Booking fetched successfully', $resource);

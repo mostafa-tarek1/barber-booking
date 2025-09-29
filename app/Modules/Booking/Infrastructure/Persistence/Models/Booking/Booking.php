@@ -51,4 +51,17 @@ class Booking extends Model implements TranslatableContract
     {
         return $this->belongsTo(Employee::class, 'updated_by');
     }
+    
+    public function employee()
+    {
+        // Get the employee from the first service in the booking
+        return $this->hasOneThrough(
+            Employee::class,
+            'booking_service',
+            'booking_id', // Foreign key on booking_service table
+            'id', // Foreign key on employees table
+            'id', // Local key on bookings table
+            'employee_id' // Local key on booking_service table
+        )->withDefault();
+    }
 }
