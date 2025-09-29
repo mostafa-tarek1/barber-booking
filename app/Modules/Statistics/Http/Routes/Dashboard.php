@@ -11,6 +11,7 @@ use App\Modules\Statistics\Http\Controllers\Dashboard\Faq\FaqController;
 use App\Modules\Statistics\Http\Controllers\Dashboard\About\AboutController;
 use App\Modules\Statistics\Http\Controllers\Dashboard\Setting\SettingController;
 use App\Modules\Statistics\Http\Controllers\Dashboard\Slider\SliderController;
+use App\Modules\Statistics\Http\Controllers\Dashboard\Statistics\StatisticsController;
 
 // Route::prefix('dashboard')->middleware('baseAuthMiddleware:employee')->group(function () {
 //     // Banner Routes
@@ -65,6 +66,15 @@ Route::prefix('dashboard')->group(function () {
         Route::post('create_slider', [SliderController::class, 'createSlider']);
         Route::post('update_slider', [SliderController::class, 'updateSlider']);
         Route::post('delete_slider', [SliderController::class, 'deleteSlider']);
+
+        // Statistics
+        Route::controller(StatisticsController::class)->group(function () {
+            Route::post('fetch_dashboard_statistics', 'getDashboardStatistics')->name('fetch_dashboard_statistics');
+            Route::post('fetch_daily_activity', 'getDailyActivity')->name('fetch_daily_activity');
+            Route::post('fetch_monthly_activity', 'getMonthlyActivity')->name('fetch_monthly_activity');
+            Route::post('fetch_top_services', 'getTopServices')->name('fetch_top_services');
+            Route::post('fetch_top_barbers', 'getTopBarbers')->name('fetch_top_barbers');
+        });
     });
 
     Route::controller(ContactUsController::class)->group(function () {
