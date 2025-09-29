@@ -179,14 +179,15 @@ class BookingRepository extends BaseRepositoryAbstract
                 }
                 
                 // Check for any overlap between the slot and the booking
-                // This single condition covers all possible overlap cases
-                $hasOverlap = ($slotStartTime < $bookingEnd && $slotEndTime > $bookingStart);
+                // Include 1-minute buffer after each booking
+                $hasOverlap = ($slotStartTime < $bookingEnd->copy()->addMinute() && $slotEndTime > $bookingStart);
                 
                 if ($hasOverlap) {
                     $isAvailable = false;
-                    // Track the end time of the latest conflicting booking
-                    if ($conflictingBookingEnd === null || $bookingEnd > $conflictingBookingEnd) {
-                        $conflictingBookingEnd = $bookingEnd->copy();
+                    // Track the end time of the latest conflicting booking plus 1 minute buffer
+                    $bookingEndWithBuffer = $bookingEnd->copy()->addMinute();
+                    if ($conflictingBookingEnd === null || $bookingEndWithBuffer > $conflictingBookingEnd) {
+                        $conflictingBookingEnd = $bookingEndWithBuffer;
                     }
                     break;
                 }
