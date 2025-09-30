@@ -51,7 +51,7 @@ class Booking extends Model implements TranslatableContract
     {
         return $this->belongsTo(Employee::class, 'updated_by');
     }
-    
+
     public function employee()
     {
         // Get the employee from the first service in the booking
