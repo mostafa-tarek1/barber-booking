@@ -36,11 +36,11 @@ class CreateOrUpdateAboutRequest extends BaseRequestAbstract
         $rules['lng'] = 'nullable|numeric';
 
         $rules['working_hours'] = 'nullable|array';
-        $rules['working_hours.*.days'] = 'required|array';
-        $rules['working_hours.*.days.title'] = 'required|array|min:1';
-        $rules['working_hours.*.days.title.*'] = 'required|string|max:50';
-        $rules['working_hours.*.days.from_time'] = 'required|date_format:H:i';
-        $rules['working_hours.*.days.to_time'] = 'required|date_format:H:i|after:working_hours.*.days.from_time';
+        $rules['working_hours.*.days'] = 'nullable|array';
+        $rules['working_hours.*.days.title'] = 'nullable|array|min:1';
+        $rules['working_hours.*.days.title.*'] = 'nullable|string|max:50';
+        $rules['working_hours.*.days.from_time'] = 'nullable|date_format:H:i';
+        $rules['working_hours.*.days.to_time'] = 'nullable|date_format:H:i|after:working_hours.*.days.from_time';
 
         $rules['phones'] = 'nullable|array';
         $rules['phones.*'] = [
@@ -62,7 +62,7 @@ class CreateOrUpdateAboutRequest extends BaseRequestAbstract
             // Rule::unique('about_socials', 'key'),
             // Rule::enum(SocialKeyEnum::class),
         ];
-        $rules['socials.*.value'] = 'required|string';
+        $rules['socials.*.value'] = 'nullable|string';
         $rules['socials.*.image'] = ['nullable', new ImageBase64OrFileRule];
 
         $rules['image'] = ['nullable', new ImageBase64OrFileRule];
