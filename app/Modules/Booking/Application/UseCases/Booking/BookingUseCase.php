@@ -78,17 +78,19 @@ class BookingUseCase
             }
 
             // Load the relationships with the pivot data
-            $booking->load(['services' => function($query) {
-                $query->withPivot(['employee_id']);
-            }]);
-            
+            $booking->load([
+                'services' => function ($query) {
+                    $query->withPivot(['employee_id']);
+                }
+            ]);
+
             // Get the employee from the first service if available
             if ($booking->services->isNotEmpty()) {
                 $employeeId = $booking->services->first()->pivot->employee_id;
                 $employee = \App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee::find($employeeId);
                 $booking->setRelation('employee', $employee);
             }
-            
+
             $resource = $this->handleBookingDetailResource($booking, $view);
 
             return DataSuccess(true, 'Booking fetched successfully', $resource);
@@ -136,7 +138,7 @@ class BookingUseCase
             // Check if booking time is outside allowed hours (1 PM to 1 AM)
             $startHour = $from->copy()->setTime(13, 0, 0); // 1:00 PM
             $endHour = $from->copy()->addDay()->setTime(1, 0, 0); // 1:00 AM next day
-            
+
             if ($from->lt($startHour) || $to->gt($endHour) || $to->lt($from)) {
                 DB::rollBack();
                 return DataFailed(false, 'يُسمح بالحجز من الساعة 1 ظهراً حتى 1 صباحاً فقط.');
@@ -155,7 +157,7 @@ class BookingUseCase
 
             if ($isBusy) {
                 DB::rollBack();
-                
+
                 // Get suggested time slots from the repository
                 $suggestedSlots = $this->bookingRepository->getAvailableTimeSlots(
                     $bookingDTO->employee_id,
@@ -171,7 +173,7 @@ class BookingUseCase
                 ];
 
                 if (!empty($suggestedSlots)) {
-                    $response['suggested_slots'] = array_map(function($index, $slot) {
+                    $response['suggested_slots'] = array_map(function ($index, $slot) {
                         return [
                             'id' => $index + 1,
                             'from' => Carbon::parse($slot['from'])->format('g:i A'),
@@ -204,6 +206,9 @@ class BookingUseCase
                 ];
             }
             $booking->services()->attach($pivotData);
+
+            // إرسال إشعار تلقائي
+            $this->sendBookingCreatedNotification($booking, $services, $bookingDTO->employee_id);
 
             DB::commit();
 
@@ -240,11 +245,11 @@ class BookingUseCase
             // Process services if provided
             $services = collect();
             $totalDuration = 0;
-            
+
             if (!empty($bookingDTO->services)) {
                 // Handle both array of IDs and array of objects
                 $serviceIds = collect($bookingDTO->services)
-                    ->map(function($item) {
+                    ->map(function ($item) {
                         return is_array($item) ? ($item['id'] ?? $item) : $item;
                     })
                     ->filter()
@@ -276,7 +281,7 @@ class BookingUseCase
 
             // Validate employee
             $employeeId = $bookingDTO->employee_id ?? ($services->first()->pivot->employee_id ?? null);
-            
+
             if (!$employeeId) {
                 return DataFailed(false, 'Employee is required for the booking.');
             }
@@ -284,7 +289,7 @@ class BookingUseCase
             $employee = AdminEmployee::where('id', $employeeId)
                 ->where('status', 'active')
                 ->first();
-                
+
             if (!$employee) {
                 return DataFailed(false, 'Selected employee is not available.');
             }
@@ -292,19 +297,19 @@ class BookingUseCase
             // Handle date and time
             $date = $bookingDTO->date ?? $booking->booking_date;
             $fromHour = $bookingDTO->from_hour ?? $booking->from_hour;
-            
+
             try {
                 $from = Carbon::parse("{$date} {$fromHour}");
                 $to = (clone $from)->addMinutes($totalDuration);
-                
+
                 // Check if booking time is outside allowed hours (1 PM to 1 AM)
                 $startHour = $from->copy()->setTime(13, 0, 0); // 1:00 PM
                 $endHour = $from->copy()->addDay()->setTime(1, 0, 0); // 1:00 AM next day
-                
+
                 if ($from->lt($startHour) || $to->gt($endHour) || $to->lt($from)) {
                     return DataFailed(false, 'يُسمح بالحجز من الساعة 1 ظهراً حتى 1 صباحاً فقط.');
                 }
-                
+
             } catch (\Exception $e) {
                 return DataFailed(false, 'تنسيق التاريخ أو الوقت غير صالح.');
             }
@@ -333,13 +338,13 @@ class BookingUseCase
                     $formattedSlots = [];
                     foreach ($suggestedSlots as $index => $slot) {
                         $formattedSlots[] = sprintf(
-                            '%s. من %s إلى %s', 
+                            '%s. من %s إلى %s',
                             $index + 1,
                             date('g:i A', strtotime($slot['from'])),
                             date('g:i A', strtotime($slot['to']))
                         );
                     }
-                    
+
                     return new DataFailed(
                         [
                             'message' => 'الموظف محجز بالفعل في هذا التوقيت.',
@@ -371,7 +376,15 @@ class BookingUseCase
                 'status' => $bookingDTO->status ?? $booking->status,
             ];
 
+            // حفظ الحالة القديمة قبل التحديث
+            $oldStatus = $booking->status;
+
             $booking->update($updateData);
+
+            // إرسال إشعارات حسب تغيير الحالة
+            if ($oldStatus != $updateData['status']) {
+                $this->sendBookingStatusChangeNotification($booking, $oldStatus, $updateData['status']);
+            }
 
             // Update services if changed
             if (!empty($bookingDTO->services)) {
@@ -415,6 +428,9 @@ class BookingUseCase
                 return DataFailed(false, 'Booking not found', 404);
             }
 
+            // إرسال إشعار قبل الحذف
+            $this->sendBookingDeletedNotification($booking);
+
             // delete pivot entries first (safety)
             $this->bookingServiceRepository->delete($booking->id);
 
@@ -449,8 +465,137 @@ class BookingUseCase
     }
 
     /**
+     * إرسال إشعار إنشاء حجز جديد
+     */
+    private function sendBookingCreatedNotification($booking, $services, $employeeId)
+    {
+        try {
+            // استخدام Event لإرسال الإشعار
+            event(new \App\Modules\Notification\Application\Events\BookingCreated(
+                $booking,
+                $services->toArray(),
+                $employeeId
+            ));
+        } catch (\Exception $e) {
+            Log::error('Failed to send booking created notification: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * إرسال إشعار تغيير حالة الحجز
+     */
+    private function sendBookingStatusChangeNotification($booking, $oldStatus, $newStatus)
+    {
+        try {
+            $booking->load(['services', 'employee']);
+            $employeeId = $booking->employee ? $booking->employee->id : null;
+            $serviceNames = $booking->services->pluck('name')->join(', ');
+
+            // تحديد نوع الإشعار حسب الحالة الجديدة
+            $eventClass = match ($newStatus) {
+                BookingStatusEnum::CONFIRMED->value => \App\Modules\Notification\Application\Events\BookingConfirmed::class,
+                BookingStatusEnum::CANCELLED->value => \App\Modules\Notification\Application\Events\BookingCancelled::class,
+                BookingStatusEnum::FINISHED->value => \App\Modules\Notification\Application\Events\BookingFinished::class,
+                default => null
+            };
+
+            if ($eventClass) {
+                event(new $eventClass($booking));
+            }
+
+            // إرسال إشعار إضافي للموظف إذا تغيرت الحالة
+            if ($employeeId && $oldStatus != $newStatus) {
+                $message = match ($newStatus) {
+                    BookingStatusEnum::CONFIRMED->value => "تم تأكيد حجز العميل {$booking->name} لخدمة {$serviceNames}",
+                    BookingStatusEnum::CANCELLED->value => "تم إلغاء حجز العميل {$booking->name} لخدمة {$serviceNames}",
+                    BookingStatusEnum::FINISHED->value => "تم إكمال خدمة {$serviceNames} للعميل {$booking->name}",
+                    default => "تم تحديث حالة حجز العميل {$booking->name}"
+                };
+
+                $this->sendDirectNotificationToEmployee(
+                    $employeeId,
+                    "تحديث حالة الحجز",
+                    $message,
+                    [
+                        'booking_id' => $booking->id,
+                        'customer_name' => $booking->name,
+                        'service_names' => $serviceNames,
+                        'old_status' => $oldStatus,
+                        'new_status' => $newStatus,
+                        'date' => $booking->date?->format('Y-m-d'),
+                        'time' => $booking->from_hour
+                    ]
+                );
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Failed to send booking status change notification: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * إرسال إشعار مباشر للموظف
+     */
+    private function sendDirectNotificationToEmployee($employeeId, $title, $message, $data = [])
+    {
+        try {
+            $notificationService = app(\App\Modules\Notification\Application\Services\NotificationService::class);
+
+            $type = match (true) {
+                str_contains($message, 'تأكيد') => \App\Modules\Notification\Domain\Enums\NotificationTypeEnum::BOOKING_CONFIRMED,
+                str_contains($message, 'إلغاء') => \App\Modules\Notification\Domain\Enums\NotificationTypeEnum::BOOKING_CANCELLED,
+                str_contains($message, 'إكمال') => \App\Modules\Notification\Domain\Enums\NotificationTypeEnum::BOOKING_FINISHED,
+                default => \App\Modules\Notification\Domain\Enums\NotificationTypeEnum::SYSTEM_ALERT
+            };
+
+            $notificationService->sendToEmployee(
+                $employeeId,
+                $type,
+                $title,
+                $message,
+                $data
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to send direct notification: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * إرسال إشعار حذف الحجز
+     */
+    private function sendBookingDeletedNotification($booking)
+    {
+        try {
+            $booking->load(['services', 'employee']);
+            $employeeId = $booking->employee ? $booking->employee->id : null;
+            $serviceNames = $booking->services->pluck('name')->join(', ');
+
+            if ($employeeId) {
+                $message = "تم حذف حجز العميل {$booking->name} لخدمة {$serviceNames}";
+
+                $this->sendDirectNotificationToEmployee(
+                    $employeeId,
+                    "حذف الحجز",
+                    $message,
+                    [
+                        'booking_id' => $booking->id,
+                        'customer_name' => $booking->name,
+                        'service_names' => $serviceNames,
+                        'date' => $booking->date?->format('Y-m-d'),
+                        'time' => $booking->from_hour,
+                        'action' => 'deleted'
+                    ]
+                );
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Failed to send booking deleted notification: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Get available time slots for an employee on a specific date
-     * 
+     *
      * @param int $employeeId
      * @param string $date
      * @param string $fromTime
@@ -508,7 +653,7 @@ class BookingUseCase
             $workingEnd = Carbon::parse('01:00:00')->addDay(); // 1:00 AM next day
             $currentSlot = Carbon::parse($date . ' ' . $workingStart->format('H:i:s'));
             $endOfDay = Carbon::parse($date . ' ' . $workingEnd->format('H:i:s'));
-            
+
             Log::info('Slot generation parameters:', [
                 'working_start' => $workingStart->format('H:i:s'),
                 'working_end' => $workingEnd->format('H:i:s'),
@@ -516,19 +661,19 @@ class BookingUseCase
                 'end_of_day' => $endOfDay->format('Y-m-d H:i:s'),
                 'requested_duration' => $requestedDuration . ' minutes'
             ]);
-            
+
             $slotCounter = 0;
             $maxSlotsToCheck = 100; // Safety limit to prevent infinite loops
-            
+
             while ($currentSlot->lt($endOfDay) && $slotCounter < $maxSlotsToCheck) {
                 $slotCounter++;
                 $slotEnd = $currentSlot->copy()->addMinutes($requestedDuration);
-                
+
                 Log::debug('Checking slot #' . $slotCounter, [
                     'current_slot' => $currentSlot->format('H:i:s'),
                     'slot_end' => $slotEnd->format('H:i:s')
                 ]);
-                
+
                 // Skip if slot goes beyond working hours
                 if ($slotEnd->gt($endOfDay)) {
                     Log::debug('Skipping slot - extends beyond working hours');
@@ -538,12 +683,12 @@ class BookingUseCase
 
                 $isAvailable = true;
                 $conflictingSlot = null;
-                
+
                 // Check if this slot is available
                 foreach ($availableSlots as $slot) {
                     $slotStart = Carbon::parse($slot['from']);
                     $slotEndTime = Carbon::parse($slot['to']);
-                    
+
                     // Check for overlap
                     if ($currentSlot->lt($slotEndTime) && $slotStart->lt($slotEnd)) {
                         $isAvailable = false;
@@ -560,13 +705,13 @@ class BookingUseCase
                         'from' => $currentSlot->format('H:i:s'),
                         'to' => $slotEnd->format('H:i:s'),
                     ];
-                    
+
                     $suggestedSlots[] = $newSlot;
                     Log::debug('Added suggested slot', $newSlot);
-                    
+
                     // Skip ahead to avoid overlapping suggestions
                     $currentSlot = $slotEnd;
-                    
+
                     // Limit the number of suggestions
                     if (count($suggestedSlots) >= 5) {
                         Log::info('Reached maximum number of suggested slots (5)');
@@ -577,11 +722,11 @@ class BookingUseCase
                     $currentSlot->addMinutes($intervalMinutes);
                 }
             }
-            
+
             if ($slotCounter >= $maxSlotsToCheck) {
                 Log::warning('Reached maximum number of slot checks (' . $maxSlotsToCheck . ')');
             }
-            
+
             Log::info('Generated ' . count($suggestedSlots) . ' suggested time slots');
             return $suggestedSlots;
         } catch (\Exception $e) {
