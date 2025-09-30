@@ -29,19 +29,62 @@ class BookingResource extends JsonResource
             'to_hour' => $this->to_hour,
             'time_slot' => "{$this->from_hour} - {$this->to_hour}",
             'status' => $this->status,
+            'status_text' => $this->getStatusText(),
             'created_at' => $this->created_at?->toDateTimeString(),
-            'created_by' => $this->whenLoaded('creator', function () {
-                return new AdminResource($this->creator);
+            'created_at_formatted' => $this->created_at?->format('d/m/Y H:i'),
+
+            // العلاقات مع تحسين الأداء
+            'created_by' => $this->whenLoaded('createdBy', function () {
+                return [
+                    'id' => $this->createdBy->id,
+                    'name' => trim($this->createdBy->first_name . ' ' . $this->createdBy->last_name)
+                ];
             }),
-            'updated_by' => $this->whenLoaded('updater', function () {
-                return new AdminResource($this->updater);
+            'updated_by' => $this->whenLoaded('updatedBy', function () {
+                return [
+                    'id' => $this->updatedBy->id,
+                    'name' => trim($this->updatedBy->first_name . ' ' . $this->updatedBy->last_name)
+                ];
             }),
             'services' => $this->whenLoaded('services', function () {
-                return ServiceResource::collection($this->services);
+                return $this->services->map(function ($service) {
+                    return [
+                        'id' => $service->id,
+                        'name' => $service->name,
+                        'price' => $service->price,
+                        'duration' => $service->duration,
+                        'employee_id' => $service->pivot->employee_id ?? null
+                    ];
+                });
             }),
             'employee' => $this->whenLoaded('employee', function () {
-                return new AdminResource($this->employee);
+                return [
+                    'id' => $this->employee->id,
+                    'name' => trim($this->employee->first_name . ' ' . $this->employee->last_name)
+                ];
+            }),
+
+            // معلومات إضافية محسنة
+            'total_price' => $this->whenLoaded('services', function () {
+                return $this->services->sum('price');
+            }),
+            'total_duration' => $this->whenLoaded('services', function () {
+                return $this->services->sum('duration');
             }),
         ];
+    }
+
+    /**
+     * Get status text in Arabic
+     */
+    private function getStatusText(): string
+    {
+        return match ($this->status) {
+            0 => 'في الانتظار',
+            1 => 'مؤكد',
+            2 => 'ملغي',
+            3 => 'مكتمل',
+            default => 'غير محدد'
+        };
     }
 }

@@ -21,6 +21,7 @@ use App\Modules\Booking\Http\Resources\Dashboard\Booking\BookingResource as Dash
 use App\Modules\Booking\Http\Resources\Api\Booking\BookingResource as ApiBookingResource;
 use App\Modules\Booking\Http\Resources\Dashboard\Booking\BookingDetailResource as DashboardBookingDetailResource;
 use App\Modules\Booking\Http\Resources\Api\Booking\BookingDetailResource as ApiBookingDetailResource;
+use App\Modules\Booking\Application\Services\BookingCacheService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -29,12 +30,16 @@ class BookingUseCase
 {
     protected BookingRepository $bookingRepository;
     protected BookingServiceRepository $bookingServiceRepository;
+    protected BookingCacheService $cacheService;
     protected $employee;
 
-    public function __construct(BookingRepository $bookingRepository)
-    {
+    public function __construct(
+        BookingRepository $bookingRepository,
+        BookingCacheService $cacheService
+    ) {
         $this->bookingRepository = $bookingRepository;
         $this->bookingServiceRepository = new BookingServiceRepository();
+        $this->cacheService = $cacheService;
         $this->employee = AuthHolder::getInstance()->getAuth(AuthGurdTypeEnum::EMPLOYEE->value);
     }
 
@@ -44,13 +49,20 @@ class BookingUseCase
     public function fetchBooking(BookingFilterDTO $bookingFilterDto, $view = ViewTypeEnum::DASHBOARD->value): DataStatus
     {
         try {
-            $bookings = $this->bookingRepository->filter(
-                $bookingFilterDto,
-                operator: 'like',
-                translatableFields: [],
-                paginate: $bookingFilterDto->paginate,
-                limit: $bookingFilterDto->limit
-            );
+            // إنشاء cache key بناءً على الفلاتر
+            $filters = $bookingFilterDto->toArray();
+            $cacheKey = $this->cacheService->generateListCacheKey($filters);
+
+            $bookings = $this->cacheService->getCachedBookings($cacheKey, function () use ($bookingFilterDto) {
+                return $this->bookingRepository->filter(
+                    $bookingFilterDto,
+                    operator: 'like',
+                    translatableFields: [],
+                    paginate: $bookingFilterDto->paginate,
+                    limit: $bookingFilterDto->limit,
+                    withRelations: ['services', 'createdBy', 'updatedBy'] // Eager loading للعلاقات
+                );
+            });
 
             $resource = $this->handleBookingResource($bookings, $view, $bookingFilterDto->paginate);
 
@@ -211,6 +223,9 @@ class BookingUseCase
             $this->sendBookingCreatedNotification($booking, $services, $bookingDTO->employee_id);
 
             DB::commit();
+
+            // مسح Cache بعد إنشاء حجز جديد
+            $this->cacheService->clearBookingCache();
 
             $booking->load(['services', 'createdBy', 'updatedBy']);
             $resource = $this->handleBookingDetailResource($booking, $view);
@@ -404,6 +419,9 @@ class BookingUseCase
             }
 
             DB::commit();
+
+            // مسح Cache بعد تحديث الحجز
+            $this->cacheService->clearBookingCache($booking->id);
 
             // Load relationships with the correct method names
             $booking->load(['services', 'createdBy', 'updatedBy']);
