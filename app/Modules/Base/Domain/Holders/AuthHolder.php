@@ -50,8 +50,8 @@ class AuthHolder
             if (!$authService instanceof AuthenticatesViaToken) {
                 return null; // Or throw an exception
             } */
-           /* $accessToken = PersonalAccessToken::findToken($token);
-            return $accessToken->tokenable; */
+            /* $accessToken = PersonalAccessToken::findToken($token);
+             return $accessToken->tokenable; */
             return (auth()->guard($guard)->user());
 
             // $authResult = $authService->checkAuth($token);
@@ -73,18 +73,27 @@ class AuthHolder
     {
         $app_mod = env('APP_ENV');
 
-        if ($app_mod === AppModeEnum::PRODUCTION->value && $guard !== null) {
+        // محاولة الحصول على المستخدم من auth facade
+        if ($guard !== null) {
             /** @var Model */
             $auth = auth($guard)->user();
             if ($auth) {
-                return $auth->getAuthEntity();
+                return $auth;
             }
         }
 
+        // محاولة الحصول على المستخدم من أي guard متاح
+        $auth = auth()->user();
+        if ($auth) {
+            return $auth;
+        }
+
+        // إذا لم نجد مستخدم، نستخدم header أو قيمة افتراضية
         $request = $request ?? app(Request::class);
+        $userId = $request && $request->header('userId') ? intval($request->header('userId')) : null;
 
         return new Fluent([
-            'id' => $request ? intval($request->header('userId')) : null,
+            'id' => $userId,
             'name' => 'techlab',
             'class' => 'App\Modules\User\Infrastructure\Persistence\Models\User',
         ]);
