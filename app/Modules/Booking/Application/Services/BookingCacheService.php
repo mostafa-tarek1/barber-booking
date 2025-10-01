@@ -4,11 +4,13 @@ namespace App\Modules\Booking\Application\Services;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class BookingCacheService
 {
   private const CACHE_PREFIX = 'bookings:';
-  private const CACHE_TTL = 300; // 5 minutes
+  private const CACHE_TTL = 60; // 1 minute
 
   /**
    * Get cached bookings
@@ -81,18 +83,40 @@ class BookingCacheService
           Redis::del($keys);
         }
       } else {
-        // For file cache, we can't easily clear by pattern
-        // So we'll clear common keys
-        $commonKeys = [
-          'stats:dashboard',
-          'list:dashboard',
-          'list:api',
-        ];
-
-        foreach ($commonKeys as $key) {
-          Cache::forget(self::CACHE_PREFIX . $key);
-        }
+        // For database cache, clear all booking-related cache
+        $this->clearAllBookingCache();
       }
+    }
+  }
+
+  /**
+   * Clear all booking cache for database cache
+   */
+  private function clearAllBookingCache(): void
+  {
+    // Clear common cache keys
+    $commonKeys = [
+      'stats:dashboard',
+      'list:dashboard',
+      'list:api',
+    ];
+
+    foreach ($commonKeys as $key) {
+      Cache::forget(self::CACHE_PREFIX . $key);
+    }
+
+    // Clear cache by pattern for database cache
+    try {
+      $cacheTable = config('cache.stores.database.table', 'cache');
+      $prefix = config('cache.prefix', '');
+
+      // Delete all cache entries that start with our prefix
+      DB::table($cacheTable)
+        ->where('key', 'like', $prefix . self::CACHE_PREFIX . '%')
+        ->delete();
+    } catch (\Exception $e) {
+      // Log error but don't fail
+      Log::warning('Failed to clear booking cache: ' . $e->getMessage());
     }
   }
 
