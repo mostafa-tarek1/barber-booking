@@ -65,6 +65,11 @@ class UpdateEmployeeRequest extends BaseRequestAbstract
                 'nullable',
                 new ImageBase64OrFileRule(),
             ],
+            'status' => [
+                'nullable',
+                'string',
+                Rule::in(['active', 'inactive']),
+            ],
         ];
     }
 

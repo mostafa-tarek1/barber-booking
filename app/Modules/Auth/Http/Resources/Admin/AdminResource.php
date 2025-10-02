@@ -15,11 +15,8 @@ class AdminResource extends JsonResource
             'last_name' => $this->last_name ?? "",
             'phone' => $this->phone ?? "",
             'email' => $this->email ?? "",
+            'status' => $this->status ?? "",
             'api_token' => $this->api_token ?? null,
-            'is_email_verified' => (bool) $this->is_email_verified,
-            'email_verified_at' => $this->email_verified_at,
-            'is_phone_verified' => (bool) $this->is_phone_verified,
-            'phone_verified_at' => $this->phone_verified_at,
             'image' => $this->image_link,
 
             'parent_id' => $this->parent_id,
