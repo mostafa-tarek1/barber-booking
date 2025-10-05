@@ -188,10 +188,12 @@ class StatisticsUseCase
                 'service_translations.name as service_name'
             )
                 ->join('services', 'booking_service.service_id', '=', 'services.id')
+                ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
                 ->join('service_translations', function ($join) {
                     $join->on('services.id', '=', 'service_translations.service_id')
                         ->where('service_translations.locale', '=', app()->getLocale());
                 })
+                ->where('bookings.status', 3) // الحجوزات المكتملة فقط
                 ->groupBy('services.id', 'services.price', 'service_translations.name')
                 ->orderBy(DB::raw('COUNT(booking_service.service_id)'), 'desc')
                 ->limit($limit)
@@ -235,7 +237,7 @@ class StatisticsUseCase
         )
             ->join('services', 'booking_service.service_id', '=', 'services.id')
             ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
-            ->where('bookings.status', 1) // الحجوزات المؤكدة فقط
+            ->where('bookings.status', 3) // الحجوزات المكتملة فقط
             ->value('total_revenue');
 
         return $totalRevenue ?? 0.0;
@@ -254,7 +256,7 @@ class StatisticsUseCase
         )
             ->join('services', 'booking_service.service_id', '=', 'services.id')
             ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
-            ->where('bookings.status', 1) // الحجوزات المؤكدة فقط
+            ->where('bookings.status', 3) // الحجوزات المكتملة فقط
             ->whereBetween('bookings.created_at', [$startDate, $endDate])
             ->value('total_revenue');
 
@@ -279,7 +281,7 @@ class StatisticsUseCase
                 ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
                 ->where('employees.employee_type', 'employee')
                 ->where('employees.status', 'active')
-                ->where('bookings.status', 1) // الحجوزات المؤكدة فقط
+                ->where('bookings.status', 3) // الحجوزات المكتملة فقط
                 ->groupBy('employees.id', 'employees.first_name', 'employees.last_name')
                 ->orderBy(DB::raw('COUNT(booking_service.employee_id)'), 'desc')
                 ->limit($limit)
@@ -325,7 +327,7 @@ class StatisticsUseCase
         )
             ->join('services', 'booking_service.service_id', '=', 'services.id')
             ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
-            ->where('bookings.status', 1) // الحجوزات المؤكدة فقط
+            ->where('bookings.status', 3) // الحجوزات المكتملة فقط
             ->whereBetween('bookings.created_at', [$startDate, $endDate])
             ->value('total_revenue');
 
