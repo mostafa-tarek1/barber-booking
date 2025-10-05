@@ -14,41 +14,49 @@ use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Booking\Infrastructure\Persistence\Models\BookingService\BookingService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 
 class StatisticsUseCase
 {
+    private const CACHE_TTL = 300; // 5 minutes
+    private const CACHE_PREFIX = 'statistics:';
+
     /**
      * جلب الإحصائيات الرئيسية للداشبورد
      */
     public function getDashboardStatistics(): DataStatus
     {
         try {
-            // إجمالي الحجوزات
-            $totalBookings = Booking::count();
+            $cacheKey = self::CACHE_PREFIX . 'dashboard';
 
-            // إجمالي الإيرادات
-            $totalRevenue = $this->calculateTotalRevenue();
+            return Cache::remember($cacheKey, self::CACHE_TTL, function () {
+                // إجمالي الحجوزات
+                $totalBookings = Booking::count();
 
-            // إجمالي الموظفين (الحلاقين)
-            $totalEmployees = Employee::where('employee_type', 'employee')
-                ->where('status', 'active')
-                ->count();
+                // إجمالي الإيرادات
+                $totalRevenue = $this->calculateTotalRevenue();
 
-            $statistics = [
-                'total_bookings' => $totalBookings,
-                'total_revenue' => $totalRevenue,
-                'total_employees' => $totalEmployees
-            ];
+                // إجمالي الموظفين (الحلاقين)
+                $totalEmployees = Employee::where('employee_type', 'employee')
+                    ->where('status', 'active')
+                    ->count();
 
-            return new DataSuccess(
-                $statistics,
-                null,
-                [],
-                true,
-                200,
-                'تم جلب الإحصائيات بنجاح'
-            );
+                $statistics = [
+                    'total_bookings' => $totalBookings,
+                    'total_revenue' => $totalRevenue,
+                    'total_employees' => $totalEmployees
+                ];
+
+                return new DataSuccess(
+                    $statistics,
+                    null,
+                    [],
+                    true,
+                    200,
+                    'تم جلب الإحصائيات بنجاح'
+                );
+            });
         } catch (\Exception $e) {
             return new DataFailed(
                 ['error' => $e->getMessage()],
@@ -232,13 +240,11 @@ class StatisticsUseCase
      */
     private function calculateTotalRevenue(): float
     {
-        $totalRevenue = BookingService::select(
-            DB::raw('SUM(services.price) as total_revenue')
-        )
+        $totalRevenue = DB::table('booking_service')
             ->join('services', 'booking_service.service_id', '=', 'services.id')
             ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
             ->where('bookings.status', 3) // الحجوزات المكتملة فقط
-            ->value('total_revenue');
+            ->sum('services.price');
 
         return $totalRevenue ?? 0.0;
     }
@@ -251,14 +257,12 @@ class StatisticsUseCase
         $startDate = Carbon::parse($date)->startOfDay();
         $endDate = Carbon::parse($date)->endOfDay();
 
-        $dailyRevenue = BookingService::select(
-            DB::raw('SUM(services.price) as total_revenue')
-        )
+        $dailyRevenue = DB::table('booking_service')
             ->join('services', 'booking_service.service_id', '=', 'services.id')
             ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
             ->where('bookings.status', 3) // الحجوزات المكتملة فقط
             ->whereBetween('bookings.created_at', [$startDate, $endDate])
-            ->value('total_revenue');
+            ->sum('services.price');
 
         return $dailyRevenue ?? 0.0;
     }
@@ -269,41 +273,46 @@ class StatisticsUseCase
     public function getTopBarbers(int $limit = 5): DataStatus
     {
         try {
-            $topBarbers = BookingService::select(
-                'employees.id',
-                'employees.first_name',
-                'employees.last_name',
-                DB::raw('COUNT(booking_service.employee_id) as bookings_count'),
-                DB::raw('SUM(services.price) as total_revenue')
-            )
-                ->join('services', 'booking_service.service_id', '=', 'services.id')
-                ->join('employees', 'booking_service.employee_id', '=', 'employees.id')
-                ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
-                ->where('employees.employee_type', 'employee')
-                ->where('employees.status', 'active')
-                ->where('bookings.status', 3) // الحجوزات المكتملة فقط
-                ->groupBy('employees.id', 'employees.first_name', 'employees.last_name')
-                ->orderBy(DB::raw('COUNT(booking_service.employee_id)'), 'desc')
-                ->limit($limit)
-                ->get();
+            $cacheKey = self::CACHE_PREFIX . "top_barbers_{$limit}";
 
-            $topBarbersData = $topBarbers->map(function ($barber) {
-                return [
-                    'id' => $barber->id,
-                    'name' => trim($barber->first_name . ' ' . $barber->last_name),
-                    'bookings_count' => $barber->bookings_count,
-                    'total_revenue' => $barber->total_revenue
-                ];
-            })->toArray();
+            return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($limit) {
+                $topBarbers = DB::table('booking_service')
+                    ->select([
+                        'employees.id',
+                        'employees.first_name',
+                        'employees.last_name',
+                        DB::raw('COUNT(booking_service.employee_id) as bookings_count'),
+                        DB::raw('SUM(services.price) as total_revenue')
+                    ])
+                    ->join('services', 'booking_service.service_id', '=', 'services.id')
+                    ->join('employees', 'booking_service.employee_id', '=', 'employees.id')
+                    ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
+                    ->where('employees.employee_type', 'employee')
+                    ->where('employees.status', 'active')
+                    ->where('bookings.status', 3) // الحجوزات المكتملة فقط
+                    ->groupBy('employees.id', 'employees.first_name', 'employees.last_name')
+                    ->orderBy(DB::raw('COUNT(booking_service.employee_id)'), 'desc')
+                    ->limit($limit)
+                    ->get();
 
-            return new DataSuccess(
-                $topBarbersData,
-                null,
-                [],
-                true,
-                200,
-                'تم جلب أفضل الحلاقين بنجاح'
-            );
+                $topBarbersData = $topBarbers->map(function ($barber) {
+                    return [
+                        'id' => $barber->id,
+                        'name' => trim($barber->first_name . ' ' . $barber->last_name),
+                        'bookings_count' => $barber->bookings_count,
+                        'total_revenue' => $barber->total_revenue
+                    ];
+                })->toArray();
+
+                return new DataSuccess(
+                    $topBarbersData,
+                    null,
+                    [],
+                    true,
+                    200,
+                    'تم جلب أفضل الحلاقين بنجاح'
+                );
+            });
         } catch (\Exception $e) {
             return new DataFailed(
                 ['error' => $e->getMessage()],
@@ -322,14 +331,12 @@ class StatisticsUseCase
         $startDate = Carbon::parse($month . '-01')->startOfMonth();
         $endDate = Carbon::parse($month . '-01')->endOfMonth();
 
-        $monthlyRevenue = BookingService::select(
-            DB::raw('SUM(services.price) as total_revenue')
-        )
+        $monthlyRevenue = DB::table('booking_service')
             ->join('services', 'booking_service.service_id', '=', 'services.id')
             ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
             ->where('bookings.status', 3) // الحجوزات المكتملة فقط
             ->whereBetween('bookings.created_at', [$startDate, $endDate])
-            ->value('total_revenue');
+            ->sum('services.price');
 
         return $monthlyRevenue ?? 0.0;
     }
