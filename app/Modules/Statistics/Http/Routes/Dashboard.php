@@ -41,9 +41,9 @@ Route::prefix('dashboard')->group(function () {
         Route::post('create_faq', [FaqController::class, 'createFaq']);
         Route::post('update_faq', [FaqController::class, 'updateFaq']);
         Route::post('delete_faq', [FaqController::class, 'deleteFaq']);
-        //        About
-        Route::post('create-or-update-setting', [AboutController::class, 'createOrUpdate']);
-        Route::post('fetch-settings', [AboutController::class, 'fetchAbouts']);
+        //        Settings
+        Route::post('create-or-update-setting', [SettingController::class, 'createSettings']);
+        Route::post('fetch-settings', [SettingController::class, 'fetchSettings']);
         // privacy routes
         Route::post('create-or-update_privacy', [PrivacyController::class, 'store_privacy']);
         Route::post('fetch_privacy', [PrivacyController::class, 'fetch_privacy']);
@@ -70,6 +70,7 @@ Route::prefix('dashboard')->group(function () {
         // Statistics
         Route::controller(StatisticsController::class)->group(function () {
             Route::post('fetch_dashboard_statistics', 'getDashboardStatistics')->name('fetch_dashboard_statistics');
+            Route::post('fetch_statistics', 'getDashboardStatistics')->name('fetch_statistics');
             Route::post('fetch_daily_activity', 'getDailyActivity')->name('fetch_daily_activity');
             Route::post('fetch_monthly_activity', 'getMonthlyActivity')->name('fetch_monthly_activity');
             Route::post('fetch_top_services', 'getTopServices')->name('fetch_top_services');
