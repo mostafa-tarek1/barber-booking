@@ -241,7 +241,7 @@ class BookingController extends Controller
         );
 
         return response()->json([
-            'status' => true,
+            'status' => 200,
             'message' => 'Available time slots retrieved successfully',
             'data' => [
                 'suggested_slots' => $suggestedSlots

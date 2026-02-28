@@ -166,12 +166,11 @@ abstract class BaseRequestAbstract extends FormRequest implements BaseRequestInt
     {
         return new JsonResponse(
             [
-                'success' => false,
-                'message' =>  $validator->errors()->first() ?? 'Something went wrong. Error',
-                'errors' => $validator->errors()->all(),
-                'data' => $validator->errors()->messages()
+                'status' => 422,
+                'message' => $validator->errors()->first() ?? 'Validation failed.',
+                'data' => ['errors' => $validator->errors()->messages()],
             ],
-            422 // Unprocessable Entity
+            422
         );
     }
 }

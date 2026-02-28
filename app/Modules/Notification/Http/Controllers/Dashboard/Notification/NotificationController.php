@@ -30,8 +30,9 @@ class NotificationController extends Controller
 
         if (!$employee) {
             return response()->json([
-                'status' => false,
-                'message' => 'غير مصرح بالوصول'
+                'status' => 401,
+                'message' => 'غير مصرح بالوصول',
+                'data' => null,
             ], 401);
         }
 
@@ -45,7 +46,7 @@ class NotificationController extends Controller
         );
 
         return response()->json([
-            'status' => true,
+            'status' => 200,
             'message' => 'تم جلب الإشعارات بنجاح',
             'data' => $notifications->map(function ($notification) {
                 return [
@@ -73,15 +74,16 @@ class NotificationController extends Controller
 
         if (!$employee) {
             return response()->json([
-                'status' => false,
-                'message' => 'غير مصرح بالوصول'
+                'status' => 401,
+                'message' => 'غير مصرح بالوصول',
+                'data' => null,
             ], 401);
         }
 
         $count = $this->notificationService->getUnreadCountForEmployee($employee->id);
 
         return response()->json([
-            'status' => true,
+            'status' => 200,
             'message' => 'تم جلب العدد بنجاح',
             'data' => [
                 'unread_count' => $count
@@ -98,8 +100,9 @@ class NotificationController extends Controller
 
         if (!$employee) {
             return response()->json([
-                'status' => false,
-                'message' => 'غير مصرح بالوصول'
+                'status' => 401,
+                'message' => 'غير مصرح بالوصول',
+                'data' => null,
             ], 401);
         }
 
@@ -112,16 +115,18 @@ class NotificationController extends Controller
         // التحقق من أن الإشعار مخصص لهذا الموظف
         if (!$notification || $notification->employee_id !== $employee->id) {
             return response()->json([
-                'status' => false,
-                'message' => 'الإشعار غير موجود أو غير مخصص لك'
+                'status' => 404,
+                'message' => 'الإشعار غير موجود أو غير مخصص لك',
+                'data' => null,
             ], 404);
         }
 
         $this->notificationService->markAsRead($request->notification_id);
 
         return response()->json([
-            'status' => true,
-            'message' => 'تم تحديد الإشعار كمقروء'
+            'status' => 200,
+            'message' => 'تم تحديد الإشعار كمقروء',
+            'data' => null,
         ]);
     }
 
@@ -135,15 +140,16 @@ class NotificationController extends Controller
 
         if (!$employee) {
             return response()->json([
-                'status' => false,
-                'message' => 'غير مصرح بالوصول'
+                'status' => 401,
+                'message' => 'غير مصرح بالوصول',
+                'data' => null,
             ], 401);
         }
 
         $count = $this->notificationService->markAllAsReadForEmployee($employee->id);
 
         return response()->json([
-            'status' => true,
+            'status' => 200,
             'message' => 'تم تحديد جميع الإشعارات كمقروءة',
             'data' => [
                 'marked_count' => $count
@@ -160,8 +166,9 @@ class NotificationController extends Controller
 
         if (!$employee) {
             return response()->json([
-                'status' => false,
-                'message' => 'غير مصرح بالوصول'
+                'status' => 401,
+                'message' => 'غير مصرح بالوصول',
+                'data' => null,
             ], 401);
         }
 
@@ -174,16 +181,18 @@ class NotificationController extends Controller
         // التحقق من أن الإشعار مخصص لهذا الموظف
         if (!$notification || $notification->employee_id !== $employee->id) {
             return response()->json([
-                'status' => false,
-                'message' => 'الإشعار غير موجود أو غير مخصص لك'
+                'status' => 404,
+                'message' => 'الإشعار غير موجود أو غير مخصص لك',
+                'data' => null,
             ], 404);
         }
 
         $this->notificationService->deleteNotification($request->notification_id);
 
         return response()->json([
-            'status' => true,
-            'message' => 'تم حذف الإشعار بنجاح'
+            'status' => 200,
+            'message' => 'تم حذف الإشعار بنجاح',
+            'data' => null,
         ]);
     }
 
@@ -196,15 +205,16 @@ class NotificationController extends Controller
 
         if (!$employee) {
             return response()->json([
-                'status' => false,
-                'message' => 'غير مصرح بالوصول'
+                'status' => 401,
+                'message' => 'غير مصرح بالوصول',
+                'data' => null,
             ], 401);
         }
 
         $count = $this->notificationService->deleteReadNotificationsForEmployee($employee->id);
 
         return response()->json([
-            'status' => true,
+            'status' => 200,
             'message' => 'تم حذف الإشعارات المقروءة',
             'data' => [
                 'deleted_count' => $count
@@ -230,8 +240,9 @@ class NotificationController extends Controller
 
         if (!$employee || !in_array($employee->employee_type, ['admin', 'super_admin'])) {
             return response()->json([
-                'status' => false,
-                'message' => 'غير مصرح بالوصول - مطلوب صلاحية مدير'
+                'status' => 403,
+                'message' => 'غير مصرح بالوصول - مطلوب صلاحية مدير',
+                'data' => null,
             ], 403);
         }
 
@@ -287,7 +298,7 @@ class NotificationController extends Controller
             };
 
             return response()->json([
-                'status' => true,
+                'status' => 200,
                 'message' => $message,
                 'data' => [
                     'sent_count' => is_array($result) ? count($result) : 1
@@ -296,8 +307,9 @@ class NotificationController extends Controller
 
         } catch (\Exception $e) {
             return response()->json([
-                'status' => false,
-                'message' => 'حدث خطأ في إرسال الإشعار: ' . $e->getMessage()
+                'status' => 500,
+                'message' => 'حدث خطأ في إرسال الإشعار: ' . $e->getMessage(),
+                'data' => null,
             ], 500);
         }
     }
@@ -321,7 +333,7 @@ class NotificationController extends Controller
         }, $types);
 
         return response()->json([
-            'status' => true,
+            'status' => 200,
             'message' => 'تم جلب أنواع الإشعارات بنجاح',
             'data' => $formattedTypes
         ]);

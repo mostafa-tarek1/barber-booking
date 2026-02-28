@@ -28,7 +28,7 @@ class BaseAuthMiddleware
         // dd($guards);
         // Ensure at least one guard is passed and is valid
         if (empty($guards)) {
-            return response()->json(['error' => 'No guard specified'], 400);
+            return response()->json(['status' => 400, 'message' => 'No guard specified', 'data' => null], 400);
         }
 
         // Filter out invalid guards that are not in the valid guards list
@@ -65,7 +65,7 @@ class BaseAuthMiddleware
 
                     return $next($request);
                 } catch (\Exception $e) {
-                    return response()->json(['error' => $e->getMessage()], 401);
+                    return response()->json(['status' => 401, 'message' => $e->getMessage(), 'data' => null], 401);
                 }
             }
 
