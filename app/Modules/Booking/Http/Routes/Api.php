@@ -7,4 +7,5 @@ Route::prefix('api')->group(function () {
         // ---------------- Bookings ----------------
         Route::post('create_booking', [BookingController::class, 'createBooking']);
         Route::post('check_availability', [BookingController::class, 'checkAvailability']);
+        Route::post('available_slots', [BookingController::class, 'availableSlots']);
 });

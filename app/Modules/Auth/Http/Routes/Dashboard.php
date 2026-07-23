@@ -1,12 +1,10 @@
 <?php
 
 use App\Modules\Auth\Http\Controllers\Dashboard\ActivityLog\ActivityLogController;
+use App\Modules\Auth\Http\Controllers\Dashboard\Attendance\AttendanceController;
 use App\Modules\Auth\Http\Controllers\Dashboard\Customer\UserController;
 use App\Modules\Auth\Http\Controllers\Dashboard\Employee\EmployeeController;
-use App\Modules\Statistics\Http\Controllers\Dashboard\Permission\PermissionController;
 use Illuminate\Support\Facades\Route;
-use App\Modules\Base\Http\Controllers\Base\BaseController;
-
 
 Route::prefix('dashboard')->group(function () {
     Route::post('login', [EmployeeController::class, 'login']);
@@ -23,6 +21,13 @@ Route::prefix('dashboard')->middleware('baseAuthMiddleware:employee')->group(fun
         Route::post('update_employee', 'updateEmployee')->name('update_employee');
         Route::post('delete_employee', 'deleteEmployee')->name('delete_employee');
     });
+    Route::controller(AttendanceController::class)->group(function () {
+        Route::post('attendance_status', 'status');
+        Route::post('attendance_punch', 'punch');
+        Route::post('fetch_attendance_settings', 'settings');
+        Route::post('update_attendance_settings', 'updateSettings');
+        Route::post('fetch_attendance_report', 'report');
+    });
     Route::controller(UserController::class)->group(function () {
         Route::post('create_user', 'createUser');
         Route::post('delete_user', 'deleteUser');
@@ -34,10 +39,8 @@ Route::prefix('dashboard')->middleware('baseAuthMiddleware:employee')->group(fun
         Route::post('unblock_user', 'unblockUser');
         Route::post('toggle_approval', 'toggleUserApproval');
 
-
         // fetch permissions
         Route::post('updateOrCreatePermission', [\App\Modules\Auth\Http\Controllers\Dashboard\Permission\PermissionController::class, 'store_permission'])->name('create_permissions');
-
 
     });
     // user_id
@@ -45,4 +48,3 @@ Route::prefix('dashboard')->middleware('baseAuthMiddleware:employee')->group(fun
     Route::post('activity_logs', [ActivityLogController::class, 'index'])
         ->middleware('Super_Admin_Only');
 });
-

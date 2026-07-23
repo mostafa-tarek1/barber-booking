@@ -2,342 +2,227 @@
 
 namespace App\Modules\Statistics\Application\UseCases\Statistics;
 
-use App\Modules\Base\Application\Response\DataSuccess;
+use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Base\Application\Response\DataFailed;
 use App\Modules\Base\Application\Response\DataStatus;
-use App\Modules\Statistics\Application\DTOS\Statistics\StatisticsDTO;
-use App\Modules\Statistics\Application\DTOS\Statistics\DailyActivityDTO;
-use App\Modules\Statistics\Application\DTOS\Statistics\MonthlyActivityDTO;
-use App\Modules\Statistics\Application\DTOS\Statistics\TopServiceDTO;
+use App\Modules\Base\Application\Response\DataSuccess;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
-use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
-use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
-use App\Modules\Booking\Infrastructure\Persistence\Models\BookingService\BookingService;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
+use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class StatisticsUseCase
 {
-    private const CACHE_TTL = 300; // 5 minutes
-    private const CACHE_PREFIX = 'statistics:';
-
-    /**
-     * جلب الإحصائيات الرئيسية للداشبورد
-     */
     public function getDashboardStatistics(): DataStatus
     {
         try {
-            $cacheKey = self::CACHE_PREFIX . 'dashboard';
+            $today = now('Africa/Cairo')->toDateString();
+            $todayRange = $this->cairoDayUtcRange($today);
 
-            return Cache::remember($cacheKey, self::CACHE_TTL, function () {
-                // إجمالي الحجوزات
-                $totalBookings = Booking::count();
+            return new DataSuccess([
+                'total_bookings' => Booking::query()->count(),
+                'total_revenue' => (float) Invoice::query()->where('status', 'paid')->sum('total'),
+                'total_employees' => Employee::query()->where('employee_type', 'barber')->where('status', 'active')->count(),
+                'today_bookings' => Booking::query()->whereDate('date', $today)->count(),
+                'today_revenue' => (float) Invoice::query()->where('status', 'paid')->whereBetween('paid_at', $todayRange)->sum('total'),
+                'total_paid_invoices' => Invoice::query()->where('status', 'paid')->count(),
+            ], message: 'تم جلب الإحصائيات بنجاح');
+        } catch (\Throwable $exception) {
+            report($exception);
 
-                // إجمالي الإيرادات
-                $totalRevenue = $this->calculateTotalRevenue();
-
-                // إجمالي الموظفين (الحلاقين)
-                $totalEmployees = Employee::where('employee_type', 'employee')
-                    ->where('status', 'active')
-                    ->count();
-
-                $statistics = [
-                    'total_bookings' => $totalBookings,
-                    'total_revenue' => $totalRevenue,
-                    'total_employees' => $totalEmployees
-                ];
-
-                return new DataSuccess(
-                    $statistics,
-                    null,
-                    [],
-                    true,
-                    200,
-                    'تم جلب الإحصائيات بنجاح'
-                );
-            });
-        } catch (\Exception $e) {
-            return new DataFailed(
-                ['error' => $e->getMessage()],
-                false,
-                500,
-                'حدث خطأ في جلب الإحصائيات'
-            );
+            return new DataFailed(['error' => $exception->getMessage()], false, 500, 'حدث خطأ في جلب الإحصائيات');
         }
     }
 
-    /**
-     * جلب النشاط اليومي
-     */
     public function getDailyActivity(string $date): DataStatus
     {
         try {
-            $startDate = Carbon::parse($date)->startOfDay();
-            $endDate = Carbon::parse($date)->endOfDay();
-
-            // الحجوزات اليومية
-            $dailyBookings = Booking::whereBetween('created_at', [$startDate, $endDate])
-                ->select(
-                    DB::raw('DATE(created_at) as date'),
-                    DB::raw('COUNT(*) as bookings_count'),
-                    DB::raw('SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) as confirmed_bookings'),
-                    DB::raw('SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) as cancelled_bookings'),
-                    DB::raw('SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) as finished_bookings')
-                )
-                ->groupBy(DB::raw('DATE(created_at)'))
+            $bookingCounts = Booking::query()
+                ->whereDate('date', $date)
+                ->selectRaw('COUNT(*) as total')
+                ->selectRaw('SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) as confirmed')
+                ->selectRaw('SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) as cancelled')
+                ->selectRaw('SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) as finished')
                 ->first();
 
-            // الإيرادات اليومية
-            $dailyRevenue = $this->calculateDailyRevenue($date);
-
-            $dailyActivity = [
+            return new DataSuccess([
                 'date' => $date,
-                'bookings' => $dailyBookings ? [
-                    'total' => $dailyBookings->bookings_count ?? 0,
-                    'confirmed' => $dailyBookings->confirmed_bookings ?? 0,
-                    'cancelled' => $dailyBookings->cancelled_bookings ?? 0,
-                    'finished' => $dailyBookings->finished_bookings ?? 0,
-                ] : [
-                    'total' => 0,
-                    'confirmed' => 0,
-                    'cancelled' => 0,
-                    'finished' => 0,
+                'bookings' => [
+                    'total' => (int) ($bookingCounts->total ?? 0),
+                    'confirmed' => (int) ($bookingCounts->confirmed ?? 0),
+                    'cancelled' => (int) ($bookingCounts->cancelled ?? 0),
+                    'finished' => (int) ($bookingCounts->finished ?? 0),
                 ],
-                'revenue' => $dailyRevenue
-            ];
+                'revenue' => $this->paidRevenueBetween(...$this->cairoDayUtcRange($date)),
+            ], message: 'تم جلب النشاط اليومي بنجاح');
+        } catch (\Throwable $exception) {
+            report($exception);
 
-            return new DataSuccess(
-                $dailyActivity,
-                null,
-                [],
-                true,
-                200,
-                'تم جلب النشاط اليومي بنجاح'
-            );
-        } catch (\Exception $e) {
-            return new DataFailed(
-                ['error' => $e->getMessage()],
-                false,
-                500,
-                'حدث خطأ في جلب النشاط اليومي'
-            );
+            return new DataFailed(['error' => $exception->getMessage()], false, 500, 'حدث خطأ في جلب النشاط اليومي');
         }
     }
 
-    /**
-     * جلب النشاط الشهري
-     */
     public function getMonthlyActivity(string $month): DataStatus
     {
         try {
-            $startDate = Carbon::parse($month . '-01')->startOfMonth();
-            $endDate = Carbon::parse($month . '-01')->endOfMonth();
+            $monthStart = Carbon::createFromFormat('Y-m-d', "$month-01", 'Africa/Cairo')->startOfMonth();
+            $monthEnd = $monthStart->copy()->endOfMonth();
 
-            // الحجوزات الشهرية حسب اليوم
-            $monthlyBookings = Booking::whereBetween('created_at', [$startDate, $endDate])
-                ->select(
-                    DB::raw('DATE(created_at) as date'),
-                    DB::raw('COUNT(*) as bookings_count'),
-                    DB::raw('SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) as confirmed_bookings'),
-                    DB::raw('SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) as cancelled_bookings'),
-                    DB::raw('SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) as finished_bookings')
-                )
-                ->groupBy(DB::raw('DATE(created_at)'))
-                ->orderBy(DB::raw('DATE(created_at)'))
-                ->get();
-
-            // الإيرادات الشهرية
-            $monthlyRevenue = $this->calculateMonthlyRevenue($month);
-
-            $monthlyActivity = [
+            return new DataSuccess([
                 'month' => $month,
-                'daily_bookings' => $monthlyBookings->map(function ($item) {
-                    return [
-                        'date' => $item->date,
-                        'total' => $item->bookings_count,
-                        'confirmed' => $item->confirmed_bookings,
-                        'cancelled' => $item->cancelled_bookings,
-                        'finished' => $item->finished_bookings,
-                    ];
-                })->toArray(),
-                'total_revenue' => $monthlyRevenue
-            ];
+                'daily_bookings' => $this->monthlyBookingRows($monthStart, $monthEnd),
+                'total_revenue' => $this->paidRevenueBetween($monthStart->copy()->utc(), $monthEnd->copy()->utc()),
+                'recent_daily_activity' => $this->recentDailyActivity(),
+                'monthly_revenue' => $this->lastSixMonthsRevenue(),
+            ], message: 'تم جلب النشاط الشهري بنجاح');
+        } catch (\Throwable $exception) {
+            report($exception);
 
-            return new DataSuccess(
-                $monthlyActivity,
-                null,
-                [],
-                true,
-                200,
-                'تم جلب النشاط الشهري بنجاح'
-            );
-        } catch (\Exception $e) {
-            return new DataFailed(
-                ['error' => $e->getMessage()],
-                false,
-                500,
-                'حدث خطأ في جلب النشاط الشهري'
-            );
+            return new DataFailed(['error' => $exception->getMessage()], false, 500, 'حدث خطأ في جلب النشاط الشهري');
         }
     }
 
-    /**
-     * جلب أفضل الخدمات
-     */
     public function getTopServices(int $limit = 5): DataStatus
     {
         try {
-            $topServices = BookingService::select(
-                'services.id',
-                'services.price',
-                DB::raw('COUNT(booking_service.service_id) as bookings_count'),
-                DB::raw('SUM(services.price) as total_revenue'),
-                'service_translations.name as service_name'
-            )
-                ->join('services', 'booking_service.service_id', '=', 'services.id')
-                ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
-                ->join('service_translations', function ($join) {
-                    $join->on('services.id', '=', 'service_translations.service_id')
-                        ->where('service_translations.locale', '=', app()->getLocale());
+            $services = DB::table('invoice_items')
+                ->join('invoices', 'invoice_items.invoice_id', '=', 'invoices.id')
+                ->leftJoin('service_translations', function ($join) {
+                    $join->on('invoice_items.service_id', '=', 'service_translations.service_id')
+                        ->where('service_translations.locale', app()->getLocale());
                 })
-                ->where('bookings.status', 3) // الحجوزات المكتملة فقط
-                ->groupBy('services.id', 'services.price', 'service_translations.name')
-                ->orderBy(DB::raw('COUNT(booking_service.service_id)'), 'desc')
+                ->where('invoices.status', 'paid')
+                ->whereNotNull('invoice_items.service_id')
+                ->selectRaw('invoice_items.service_id as id')
+                ->selectRaw('COALESCE(MAX(service_translations.name), MAX(invoice_items.description)) as name')
+                ->selectRaw('MAX(invoice_items.unit_price) as price')
+                ->selectRaw('SUM(invoice_items.quantity) as bookings_count')
+                ->selectRaw('SUM(invoice_items.total) as total_revenue')
+                ->groupBy('invoice_items.service_id')
+                ->orderByDesc('bookings_count')
                 ->limit($limit)
                 ->get();
 
-            $topServicesData = $topServices->map(function ($service) {
-                return [
-                    'id' => $service->id,
-                    'name' => $service->service_name,
-                    'price' => $service->price,
-                    'bookings_count' => $service->bookings_count,
-                    'total_revenue' => $service->total_revenue
-                ];
-            })->toArray();
+            return new DataSuccess($services, message: 'تم جلب أفضل الخدمات بنجاح');
+        } catch (\Throwable $exception) {
+            report($exception);
 
-            return new DataSuccess(
-                $topServicesData,
-                null,
-                [],
-                true,
-                200,
-                'تم جلب أفضل الخدمات بنجاح'
-            );
-        } catch (\Exception $e) {
-            return new DataFailed(
-                ['error' => $e->getMessage()],
-                false,
-                500,
-                'حدث خطأ في جلب أفضل الخدمات'
-            );
+            return new DataFailed(['error' => $exception->getMessage()], false, 500, 'حدث خطأ في جلب أفضل الخدمات');
         }
     }
 
-    /**
-     * حساب إجمالي الإيرادات
-     */
-    private function calculateTotalRevenue(): float
-    {
-        $totalRevenue = DB::table('booking_service')
-            ->join('services', 'booking_service.service_id', '=', 'services.id')
-            ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
-            ->where('bookings.status', 3) // الحجوزات المكتملة فقط
-            ->sum('services.price');
-
-        return $totalRevenue ?? 0.0;
-    }
-
-    /**
-     * حساب الإيرادات اليومية
-     */
-    private function calculateDailyRevenue(string $date): float
-    {
-        $startDate = Carbon::parse($date)->startOfDay();
-        $endDate = Carbon::parse($date)->endOfDay();
-
-        $dailyRevenue = DB::table('booking_service')
-            ->join('services', 'booking_service.service_id', '=', 'services.id')
-            ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
-            ->where('bookings.status', 3) // الحجوزات المكتملة فقط
-            ->whereBetween('bookings.created_at', [$startDate, $endDate])
-            ->sum('services.price');
-
-        return $dailyRevenue ?? 0.0;
-    }
-
-    /**
-     * جلب أفضل الحلاقين
-     */
     public function getTopBarbers(int $limit = 5): DataStatus
     {
         try {
-            $cacheKey = self::CACHE_PREFIX . "top_barbers_{$limit}";
+            $barbers = DB::table('employees')
+                ->join('invoices', 'invoices.barber_id', '=', 'employees.id')
+                ->where('employees.employee_type', 'barber')
+                ->where('invoices.status', 'paid')
+                ->select(['employees.id', 'employees.first_name', 'employees.last_name'])
+                ->selectRaw('COUNT(invoices.id) as bookings_count')
+                ->selectRaw('SUM(invoices.total) as total_revenue')
+                ->groupBy('employees.id', 'employees.first_name', 'employees.last_name')
+                ->orderByDesc('total_revenue')
+                ->limit($limit)
+                ->get()
+                ->map(fn (object $barber) => [
+                    'id' => $barber->id,
+                    'name' => trim("$barber->first_name $barber->last_name"),
+                    'bookings_count' => (int) $barber->bookings_count,
+                    'total_revenue' => $barber->total_revenue,
+                ]);
 
-            return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($limit) {
-                $topBarbers = DB::table('booking_service')
-                    ->select([
-                        'employees.id',
-                        'employees.first_name',
-                        'employees.last_name',
-                        DB::raw('COUNT(booking_service.employee_id) as bookings_count'),
-                        DB::raw('SUM(services.price) as total_revenue')
-                    ])
-                    ->join('services', 'booking_service.service_id', '=', 'services.id')
-                    ->join('employees', 'booking_service.employee_id', '=', 'employees.id')
-                    ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
-                    ->where('employees.employee_type', 'employee')
-                    ->where('employees.status', 'active')
-                    ->where('bookings.status', 3) // الحجوزات المكتملة فقط
-                    ->groupBy('employees.id', 'employees.first_name', 'employees.last_name')
-                    ->orderBy(DB::raw('COUNT(booking_service.employee_id)'), 'desc')
-                    ->limit($limit)
-                    ->get();
+            return new DataSuccess($barbers, message: 'تم جلب أفضل الحلاقين بنجاح');
+        } catch (\Throwable $exception) {
+            report($exception);
 
-                $topBarbersData = $topBarbers->map(function ($barber) {
-                    return [
-                        'id' => $barber->id,
-                        'name' => trim($barber->first_name . ' ' . $barber->last_name),
-                        'bookings_count' => $barber->bookings_count,
-                        'total_revenue' => $barber->total_revenue
-                    ];
-                })->toArray();
-
-                return new DataSuccess(
-                    $topBarbersData,
-                    null,
-                    [],
-                    true,
-                    200,
-                    'تم جلب أفضل الحلاقين بنجاح'
-                );
-            });
-        } catch (\Exception $e) {
-            return new DataFailed(
-                ['error' => $e->getMessage()],
-                false,
-                500,
-                'حدث خطأ في جلب أفضل الحلاقين'
-            );
+            return new DataFailed(['error' => $exception->getMessage()], false, 500, 'حدث خطأ في جلب أفضل الحلاقين');
         }
     }
 
-    /**
-     * حساب الإيرادات الشهرية
-     */
-    private function calculateMonthlyRevenue(string $month): float
+    private function monthlyBookingRows(Carbon $monthStart, Carbon $monthEnd): array
     {
-        $startDate = Carbon::parse($month . '-01')->startOfMonth();
-        $endDate = Carbon::parse($month . '-01')->endOfMonth();
+        return Booking::query()
+            ->whereBetween('date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->selectRaw('DATE(date) as date, COUNT(*) as total')
+            ->selectRaw('SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) as confirmed')
+            ->selectRaw('SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) as cancelled')
+            ->selectRaw('SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) as finished')
+            ->groupByRaw('DATE(date)')
+            ->orderBy('date')
+            ->get()
+            ->map(fn (object $row) => [
+                'date' => Carbon::parse($row->date)->toDateString(),
+                'total' => (int) $row->total,
+                'confirmed' => (int) $row->confirmed,
+                'cancelled' => (int) $row->cancelled,
+                'finished' => (int) $row->finished,
+            ])
+            ->all();
+    }
 
-        $monthlyRevenue = DB::table('booking_service')
-            ->join('services', 'booking_service.service_id', '=', 'services.id')
-            ->join('bookings', 'booking_service.booking_id', '=', 'bookings.id')
-            ->where('bookings.status', 3) // الحجوزات المكتملة فقط
-            ->whereBetween('bookings.created_at', [$startDate, $endDate])
-            ->sum('services.price');
+    private function recentDailyActivity(): array
+    {
+        $end = now('Africa/Cairo')->startOfDay();
+        $start = $end->copy()->subDays(6);
+        $bookings = Booking::query()
+            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
+            ->selectRaw('DATE(date) as date, COUNT(*) as total')
+            ->groupByRaw('DATE(date)')
+            ->pluck('total', 'date');
+        $revenues = $this->revenueGroupedByDate($start->copy()->utc(), $end->copy()->endOfDay()->utc());
 
-        return $monthlyRevenue ?? 0.0;
+        return collect(range(0, 6))->map(function (int $dayOffset) use ($start, $bookings, $revenues) {
+            $date = $start->copy()->addDays($dayOffset)->toDateString();
+
+            return [
+                'date' => $date,
+                'bookings' => (int) ($bookings[$date] ?? 0),
+                'revenue' => (float) ($revenues[$date] ?? 0),
+            ];
+        })->all();
+    }
+
+    private function lastSixMonthsRevenue(): array
+    {
+        $firstMonth = now('Africa/Cairo')->startOfMonth()->subMonths(5);
+        $lastMonth = now('Africa/Cairo')->endOfMonth();
+        $revenues = Invoice::query()
+            ->where('status', 'paid')
+            ->whereBetween('paid_at', [$firstMonth->copy()->utc(), $lastMonth->copy()->utc()])
+            ->get(['paid_at', 'total'])
+            ->groupBy(fn (Invoice $invoice) => $invoice->paid_at->setTimezone('Africa/Cairo')->format('Y-m'))
+            ->map(fn ($invoices) => $invoices->sum('total'));
+
+        return collect(range(0, 5))->map(function (int $monthOffset) use ($firstMonth, $revenues) {
+            $month = $firstMonth->copy()->addMonths($monthOffset)->format('Y-m');
+
+            return ['month' => $month, 'revenue' => (float) ($revenues[$month] ?? 0)];
+        })->all();
+    }
+
+    private function revenueGroupedByDate(Carbon $start, Carbon $end)
+    {
+        return Invoice::query()
+            ->where('status', 'paid')
+            ->whereBetween('paid_at', [$start, $end])
+            ->get(['paid_at', 'total'])
+            ->groupBy(fn (Invoice $invoice) => $invoice->paid_at->setTimezone('Africa/Cairo')->toDateString())
+            ->map(fn ($invoices) => $invoices->sum('total'));
+    }
+
+    private function paidRevenueBetween(Carbon $start, Carbon $end): float
+    {
+        return (float) Invoice::query()
+            ->where('status', 'paid')
+            ->whereBetween('paid_at', [$start, $end])
+            ->sum('total');
+    }
+
+    private function cairoDayUtcRange(string $date): array
+    {
+        $day = Carbon::parse($date, 'Africa/Cairo');
+
+        return [$day->copy()->startOfDay()->utc(), $day->copy()->endOfDay()->utc()];
     }
 }

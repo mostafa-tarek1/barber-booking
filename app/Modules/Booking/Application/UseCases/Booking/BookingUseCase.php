@@ -22,6 +22,7 @@ use App\Modules\Booking\Http\Resources\Api\Booking\BookingResource as ApiBooking
 use App\Modules\Booking\Http\Resources\Dashboard\Booking\BookingDetailResource as DashboardBookingDetailResource;
 use App\Modules\Booking\Http\Resources\Api\Booking\BookingDetailResource as ApiBookingDetailResource;
 use App\Modules\Booking\Application\Services\BookingCacheService;
+use App\Modules\Booking\Application\Services\BarberAvailabilityService;
 use App\Modules\Statistics\Application\Services\StatisticsCacheService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -33,17 +34,20 @@ class BookingUseCase
     protected BookingServiceRepository $bookingServiceRepository;
     protected BookingCacheService $cacheService;
     protected StatisticsCacheService $statisticsCacheService;
+    protected BarberAvailabilityService $availabilityService;
     protected $employee;
 
     public function __construct(
         BookingRepository $bookingRepository,
         BookingCacheService $cacheService,
-        StatisticsCacheService $statisticsCacheService
+        StatisticsCacheService $statisticsCacheService,
+        BarberAvailabilityService $availabilityService
     ) {
         $this->bookingRepository = $bookingRepository;
         $this->bookingServiceRepository = new BookingServiceRepository();
         $this->cacheService = $cacheService;
         $this->statisticsCacheService = $statisticsCacheService;
+        $this->availabilityService = $availabilityService;
         $this->employee = AuthHolder::getInstance()->getAuth(AuthGurdTypeEnum::EMPLOYEE->value);
     }
 
@@ -145,7 +149,11 @@ class BookingUseCase
             }
             // 1.5- التحقق من الموظف
             $employee = AdminEmployee::where('id', $bookingDTO->employee_id)
+                ->where('employee_type', 'barber')
                 ->where('status', 'active')
+                ->where('is_active', true)
+                ->where('is_blocked', false)
+                ->lockForUpdate()
                 ->first();
 
             if (!$employee) {
@@ -157,61 +165,29 @@ class BookingUseCase
             $totalDuration = (int) $services->sum('duration');
             $from = Carbon::parse("{$bookingDTO->date} {$bookingDTO->from_hour}");
             $to = (clone $from)->addMinutes($totalDuration);
-            $requestedDuration = $totalDuration; // Store the duration for later use
-
-            // Check if booking time is outside allowed hours (1 PM to 1 AM)
-            $startHour = $from->copy()->setTime(13, 0, 0); // 1:00 PM
-            $endHour = $from->copy()->addDay()->setTime(1, 0, 0); // 1:00 AM next day
-
-            if ($from->lt($startHour) || $to->gt($endHour) || $to->lt($from)) {
-                DB::rollBack();
-                return DataFailed(false, 'يُسمح بالحجز من الساعة 1 ظهراً حتى 1 صباحاً فقط.');
-            }
-
             $bookingDTO->to_hour = $to->format('H:i');
             $bookingDTO->status = BookingStatusEnum::PENDING->value;
 
-            // 3- تحقق من تفرغ الموظف
-            $isBusy = $this->bookingRepository->checkEmployeeAvailability(
+            $isAvailable = $this->availabilityService->isAvailable(
                 $bookingDTO->employee_id,
                 $bookingDTO->date,
-                $from->format('H:i:s'),
-                $to->format('H:i:s')
+                $serviceIds,
+                $from->format('H:i')
             );
 
-            if ($isBusy) {
+            if (!$isAvailable) {
                 DB::rollBack();
-
-                // Get suggested time slots from the repository
-                $suggestedSlots = $this->bookingRepository->getAvailableTimeSlots(
+                $availableSlots = $this->availabilityService->availableSlots(
                     $bookingDTO->employee_id,
                     $bookingDTO->date,
-                    '13:00', // 1:00 PM - Shift start
-                    '01:00', // 1:00 AM - Shift end (next day)
-                    $requestedDuration // Duration in minutes
+                    $serviceIds
                 );
 
-                // Prepare the response with the suggested slots
-                $response = [
-                    'message' => 'الموظف محجز بالفعل في هذا التوقيت.'
-                ];
-
-                if (!empty($suggestedSlots)) {
-                    $response['suggested_slots'] = array_map(function ($index, $slot) {
-                        return [
-                            'id' => $index + 1,
-                            'from' => Carbon::parse($slot['from'])->format('g:i A'),
-                            'to' => Carbon::parse($slot['to'])->format('g:i A'),
-                            'from_time' => $slot['from'],
-                            'to_time' => $slot['to']
-                        ];
-                    }, array_keys($suggestedSlots), array_values($suggestedSlots));
-                }
-
                 return new DataFailed(
-                    $response,
-                    false,
-                    400
+                    errors: ['available_slots' => $availableSlots],
+                    status: false,
+                    statusCode: 409,
+                    message: 'الموعد لم يعد متاحاً. اختر موعداً آخر.'
                 );
             }
 

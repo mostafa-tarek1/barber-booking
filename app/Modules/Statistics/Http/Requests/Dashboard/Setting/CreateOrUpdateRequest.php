@@ -2,11 +2,10 @@
 
 namespace App\Modules\Statistics\Http\Requests\Dashboard\Setting;
 
-use Illuminate\Validation\Rule;
-use Mcamara\LaravelLocalization\Facades\LaravelLocalization;
 use App\Modules\Base\Domain\Request\BaseRequestAbstract;
 use App\Modules\Product\Domain\Enums\TaxTypeEnum;
 use App\Modules\Statistics\Application\DTOS\Setting\SettingDTO;
+use Illuminate\Validation\Rule;
 
 class CreateOrUpdateRequest extends BaseRequestAbstract
 {
@@ -14,7 +13,7 @@ class CreateOrUpdateRequest extends BaseRequestAbstract
 
     public function authorize(): bool
     {
-        return true;
+        return in_array($this->user()?->employee_type, ['admin', 'super_admin'], true);
     }
 
     public function CustomRules(): array
@@ -29,6 +28,7 @@ class CreateOrUpdateRequest extends BaseRequestAbstract
 
         $rules['tax_amount'] = 'required|numeric';
         $rules['tax_type'] = ['required', Rule::enum(TaxTypeEnum::class)];
+
         return $rules;
     }
 }
