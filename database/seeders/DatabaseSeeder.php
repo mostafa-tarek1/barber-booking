@@ -2,8 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use App\Modules\Auth\Infrastructure\DataBase\Seeders\SuperAdminSeeder;
 use Illuminate\Database\Seeder;
 
@@ -16,10 +14,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             SuperAdminSeeder::class,
+            ServiceCatalogSeeder::class,
         ]);
-        // User::factory()->create([
-        //     'name' => 'Test User',
-        //     'email' => 'test@example.com',
-        // ]);
     }
 }
