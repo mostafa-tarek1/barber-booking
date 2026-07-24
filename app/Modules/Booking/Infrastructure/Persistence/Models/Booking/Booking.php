@@ -9,11 +9,14 @@ use Illuminate\Database\Eloquent\Model;
 use Astrotomic\Translatable\Contracts\Translatable as TranslatableContract;
 use Astrotomic\Translatable\Translatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Modules\Service\Infrastructure\Persistence\Models\Package\Package;
 
 class Booking extends Model implements TranslatableContract
 {
     use Translatable;
     use HasFactory;
+    use SoftDeletes;
 
     public $translatedAttributes = ['notes', 'locale'];
 
@@ -26,6 +29,7 @@ class Booking extends Model implements TranslatableContract
         'from_hour',
         'to_hour',
         'status',
+        'expires_at',
         'created_by',
         'updated_by'
     ];
@@ -34,13 +38,30 @@ class Booking extends Model implements TranslatableContract
         'date' => 'datetime',
         'from_hour' => 'string',
         'to_hour' => 'string',
+        'expires_at' => 'datetime',
     ];
 
     public function services()
     {
         return $this->belongsToMany(Service::class, 'booking_service', 'booking_id', 'service_id')
-            ->withPivot(['employee_id', 'created_at', 'updated_at'])
+            ->withPivot([
+                'employee_id',
+                'package_id',
+                'name_snapshot',
+                'price_snapshot',
+                'duration_snapshot',
+                'quantity',
+                'created_at',
+                'updated_at',
+            ])
             ->select('services.*'); // Include all columns from services table
+    }
+
+    public function packages()
+    {
+        return $this->belongsToMany(Package::class, 'booking_package')
+            ->withPivot(['name_snapshot', 'price_snapshot', 'duration_snapshot'])
+            ->withTimestamps();
     }
 
     public function createdBy()

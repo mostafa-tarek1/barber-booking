@@ -29,6 +29,8 @@ Route::prefix('dashboard')->group(function () {
         Route::middleware('employeeRole:admin,super_admin')->group(function () {
             Route::post('create_barber_time_off', [BookingController::class, 'createTimeOff']);
             Route::post('delete_barber_time_off', [BookingController::class, 'deleteTimeOff']);
+            Route::post('fetch_barber_working_hours', [BookingController::class, 'fetchWorkingHours']);
+            Route::post('update_barber_working_hours', [BookingController::class, 'updateWorkingHours']);
         });
     });
 });

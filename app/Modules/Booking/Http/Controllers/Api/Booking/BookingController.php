@@ -64,8 +64,10 @@ class BookingController extends Controller
         $validated = $request->validate([
             'employee_id' => ['required', 'integer', 'exists:employees,id'],
             'date' => ['required', 'date', 'after_or_equal:today'],
-            'services' => ['required', 'array', 'min:1'],
+            'services' => ['nullable', 'array', 'required_without:packages'],
             'services.*' => ['integer', 'distinct', 'exists:services,id'],
+            'packages' => ['nullable', 'array', 'required_without:services'],
+            'packages.*' => ['integer', 'distinct', 'exists:packages,id'],
         ]);
 
         return response()->json([
@@ -75,7 +77,9 @@ class BookingController extends Controller
                 'slots' => $this->availabilityService->availableSlots(
                     $validated['employee_id'],
                     $validated['date'],
-                    $validated['services']
+                    $validated['services'] ?? [],
+                    null,
+                    $validated['packages'] ?? []
                 ),
             ],
         ]);

@@ -9,7 +9,9 @@ use App\Modules\Booking\Http\Requests\Booking\UpdateBookingRequest;
 use App\Modules\Booking\Application\UseCases\Booking\BookingUseCase;
 use App\Modules\Booking\Application\Services\BarberAvailabilityService;
 use App\Modules\Booking\Infrastructure\Persistence\Models\BarberTimeOff\BarberTimeOff;
+use App\Modules\Booking\Infrastructure\Persistence\Models\BarberWorkingHour\BarberWorkingHour;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use App\Modules\Blog\Application\Enums\View\ViewTypeEnum;
 
@@ -258,8 +260,10 @@ class BookingController extends Controller
         $validated = $request->validate([
             'employee_id' => ['required', 'integer', 'exists:employees,id'],
             'date' => ['required', 'date', 'after_or_equal:today'],
-            'services' => ['required', 'array', 'min:1'],
+            'services' => ['nullable', 'array', 'required_without:packages'],
             'services.*' => ['integer', 'distinct', 'exists:services,id'],
+            'packages' => ['nullable', 'array', 'required_without:services'],
+            'packages.*' => ['integer', 'distinct', 'exists:packages,id'],
             'exclude_booking_id' => ['nullable', 'integer', 'exists:bookings,id'],
         ]);
 
@@ -270,8 +274,9 @@ class BookingController extends Controller
                 'slots' => $this->availabilityService->availableSlots(
                     $validated['employee_id'],
                     $validated['date'],
-                    $validated['services'],
-                    $validated['exclude_booking_id'] ?? null
+                    $validated['services'] ?? [],
+                    $validated['exclude_booking_id'] ?? null,
+                    $validated['packages'] ?? []
                 ),
             ],
         ]);
@@ -331,5 +336,56 @@ class BookingController extends Controller
         BarberTimeOff::query()->findOrFail($validated['time_off_id'])->delete();
 
         return response()->json(['status' => 200, 'message' => 'Time off deleted successfully', 'data' => null]);
+    }
+
+    public function fetchWorkingHours(Request $request)
+    {
+        $validated = $request->validate([
+            'employee_id' => ['required', 'integer', 'exists:employees,id'],
+        ]);
+
+        $rows = BarberWorkingHour::query()
+            ->where('employee_id', $validated['employee_id'])
+            ->get()
+            ->keyBy('weekday');
+
+        $hours = collect(range(0, 6))->map(fn (int $weekday) => [
+            'weekday' => $weekday,
+            'from_hour' => $rows->get($weekday)?->from_hour ?? '13:00',
+            'to_hour' => $rows->get($weekday)?->to_hour ?? '01:00',
+            'is_day_off' => (bool) ($rows->get($weekday)?->is_day_off ?? false),
+        ]);
+
+        return response()->json(['status' => 200, 'message' => 'Working hours fetched successfully', 'data' => $hours]);
+    }
+
+    public function updateWorkingHours(Request $request)
+    {
+        $validated = $request->validate([
+            'employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'days' => ['required', 'array', 'size:7'],
+            'days.*.weekday' => ['required', 'integer', 'between:0,6', 'distinct'],
+            'days.*.is_day_off' => ['required', 'boolean'],
+            'days.*.from_hour' => ['required_unless:days.*.is_day_off,true', 'nullable', 'date_format:H:i'],
+            'days.*.to_hour' => ['required_unless:days.*.is_day_off,true', 'nullable', 'date_format:H:i'],
+        ]);
+
+        DB::transaction(function () use ($validated) {
+            foreach ($validated['days'] as $day) {
+                BarberWorkingHour::query()->updateOrCreate(
+                    [
+                        'employee_id' => $validated['employee_id'],
+                        'weekday' => $day['weekday'],
+                    ],
+                    [
+                        'from_hour' => $day['is_day_off'] ? null : $day['from_hour'],
+                        'to_hour' => $day['is_day_off'] ? null : $day['to_hour'],
+                        'is_day_off' => $day['is_day_off'],
+                    ]
+                );
+            }
+        });
+
+        return $this->fetchWorkingHours($request);
     }
 }

@@ -18,15 +18,17 @@ class CreateBookingRequest extends BaseRequestAbstract
     public function CustomRules(): array
     {
         return [
-            'phone' => ['nullable', 'string', 'min:9', 'max:13'],
+            'phone' => ['required', 'string', 'min:9', 'max:13'],
             'email' => ['nullable', 'email', 'max:255'],
             'date' => ['required', 'date', 'after_or_equal:today'],
             'name' => ['required', 'string', 'max:255'],
             'from_hour' => ['required', 'date_format:H:i'],
             'to_hour' => ['nullable', 'date_format:H:i', 'after:from_hour'],
             'status' => ['sometimes', Rule::enum(BookingStatusEnum::class)],
-            'services' => ['required', 'array', 'min:1'],
-            'services.*' => ['exists:services,id'],
+            'services' => ['nullable', 'array', 'required_without:packages'],
+            'services.*' => ['integer', 'distinct', 'exists:services,id'],
+            'packages' => ['nullable', 'array', 'required_without:services'],
+            'packages.*' => ['integer', 'distinct', 'exists:packages,id'],
             'employee_id' => ['required', 'exists:employees,id'],
         ];
     }
