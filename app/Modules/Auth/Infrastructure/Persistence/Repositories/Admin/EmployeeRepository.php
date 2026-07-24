@@ -42,38 +42,32 @@ class EmployeeRepository extends BaseRepositoryAbstract
         array $whereHasRelations = [],
         array $whereHasMultipleRelations = []
     ): Collection|LengthAwarePaginator {
-        try {
-            $query = $this->getModel()->query()
-                ->withCount(['barberInvoices as clients_served' => fn ($invoiceQuery) => $invoiceQuery->where('status', 'paid')])
-                ->withSum(['barberInvoices as total_sales' => fn ($invoiceQuery) => $invoiceQuery->where('status', 'paid')], 'total')
-                ->whereNot('employee_type', EmployeeTypeEnum::SUPER_ADMIN->value);
+        $query = $this->getModel()->query()
+            ->withCount(['barberInvoices as clients_served' => fn ($invoiceQuery) => $invoiceQuery->where('status', 'paid')])
+            ->withSum(['barberInvoices as total_sales' => fn ($invoiceQuery) => $invoiceQuery->where('status', 'paid')], 'total')
+            ->whereNot('employee_type', EmployeeTypeEnum::SUPER_ADMIN->value);
 
-            $query->when(isset($dto->word), function ($q) use ($dto) {
-                $q->where(function ($q2) use ($dto) {
-                    $q2->where('first_name', 'like', "%{$dto->word}%")
-                        ->orWhere('email', 'like', "%{$dto->word}%")
-                        ->orWhere('phone', 'like', "%{$dto->word}%");
-                });
+        $query->when(isset($dto->word), function ($q) use ($dto) {
+            $q->where(function ($q2) use ($dto) {
+                $q2->where('first_name', 'like', "%{$dto->word}%")
+                    ->orWhere('email', 'like', "%{$dto->word}%")
+                    ->orWhere('phone', 'like', "%{$dto->word}%");
             });
-            foreach ($dto->toArray() as $key => $value) {
-                if (! in_array($key, ['lat', 'lng', 'distance']) && filled($value)) {
-                    $query
-                        ->when(in_array($key, $translatableFields), fn ($q) => $q->whereTranslationLike($key, "%{$value}%"))
-                        ->when(is_array($value), fn ($q) => $q->whereIn($key, $value))
-                        ->when(is_bool($value), fn ($q) => $q->where($key, $value))
-                        ->when(is_numeric($value), fn ($q) => $q->where($key, $operator, $value))
-                        ->when(is_string($value) && ! in_array($key, $translatableFields), fn ($q) => $q->where($key, $operator, ($operator === 'like' ? "%{$value}%" : $value)));
-                }
+        });
+        foreach ($dto->toArray() as $key => $value) {
+            if (! in_array($key, ['lat', 'lng', 'distance']) && filled($value)) {
+                $query
+                    ->when(in_array($key, $translatableFields), fn ($q) => $q->whereTranslationLike($key, "%{$value}%"))
+                    ->when(is_array($value), fn ($q) => $q->whereIn($key, $value))
+                    ->when(is_bool($value), fn ($q) => $q->where($key, $value))
+                    ->when(is_numeric($value), fn ($q) => $q->where($key, $operator, $value))
+                    ->when(is_string($value) && ! in_array($key, $translatableFields), fn ($q) => $q->where($key, $operator, ($operator === 'like' ? "%{$value}%" : $value)));
             }
-
-            // dd($query->get());
-
-            return $paginate ? $query->orderBy($dto->orderBy, $dto->direction)->paginate($limit) : $query->orderBy($dto->orderBy, $dto->direction)->get();
-        } catch (Exception $e) {
-            report($e);
-
-            return collect();
         }
+
+        return $paginate
+            ? $query->orderBy($dto->orderBy, $dto->direction)->paginate($limit)
+            : $query->orderBy($dto->orderBy, $dto->direction)->get();
     }
 
     public function login(LoginDTO $loginDTO): Employee

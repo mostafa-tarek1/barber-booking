@@ -22,6 +22,7 @@ class EmployeeDTO extends BaseDTOAbstract
     public $gender;
     public $fcm_token;
     public $status;
+    public $employee_type;
     public $avatar;
     public $id_type;
     public $id_image;
