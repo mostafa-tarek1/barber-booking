@@ -35,6 +35,7 @@ class BaseServiceProvider extends ServiceProvider
 
         // Register middleware
         $this->app['router']->aliasMiddleware('baseAuthMiddleware', \App\Modules\Base\Http\Middleware\BaseAuthMiddleware::class);
+        $this->app['router']->aliasMiddleware('employeeRole', \App\Modules\Base\Http\Middleware\EmployeeRoleMiddleware::class);
         config([
             'auth.guards.employee' => [
                 'driver' => 'sanctum',

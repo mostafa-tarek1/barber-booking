@@ -37,8 +37,13 @@ class EmployeeController extends BaseController
 
     public function fetchEmployees(FetchEmployeeRequest $request)
     {
+        $filters = $request->toDTO();
+        if (! in_array($request->user()->employee_type, ['admin', 'super_admin'], true)) {
+            $filters->employee_type = 'barber';
+            $filters->status = 'active';
+        }
 
-        return $this->employeeUseCase->fetchEmployees($request->toDTO())->response();
+        return $this->employeeUseCase->fetchEmployees($filters)->response();
     }
 
 

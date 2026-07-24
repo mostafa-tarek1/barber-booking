@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Route;
 
 
 Route::prefix('dashboard')->group(function () {
-    Route::middleware('baseAuthMiddleware:employee')->group(function () {
+    Route::middleware(['baseAuthMiddleware:employee', 'employeeRole:admin,super_admin'])->group(function () {
 
         Route::post('fetch_categories', [CategoryController::class, 'fetchCategories']);
         Route::post('fetch_category_details', [CategoryController::class, 'fetchCategoryDetails']);
