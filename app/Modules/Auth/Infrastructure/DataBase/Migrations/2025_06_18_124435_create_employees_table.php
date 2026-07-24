@@ -18,7 +18,7 @@ return new class extends Migration {
             $table->string('email')->unique()->nullable();
             $table->string('phone')->unique()->nullable();
             $table->text('password')->nullable();
-            $table->enum('employee_type', ['admin', 'super_admin', 'employee'])->default('admin');
+            $table->enum('employee_type', ['admin', 'super_admin', 'employee', 'barber'])->default('admin');
             $table->enum('status', ['active', 'inactive'])->default('active');
             $table->unsignedBigInteger('parent_id')->nullable();
             $table->foreign('parent_id')->references('id')->on('employees')->onDelete('set null');

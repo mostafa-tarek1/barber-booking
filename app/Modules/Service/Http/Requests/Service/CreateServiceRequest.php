@@ -5,7 +5,6 @@ namespace App\Modules\Service\Http\Requests\Service;
 use App\Modules\Base\Domain\Request\BaseRequestAbstract;
 use App\Modules\Base\Http\Rules\ImageBase64OrFileRule;
 use App\Modules\Service\Application\DTOS\Service\ServiceDTO;
-use Illuminate\Validation\Rule;
 use Mcamara\LaravelLocalization\Facades\LaravelLocalization;
 
 class CreateServiceRequest extends BaseRequestAbstract
@@ -35,7 +34,7 @@ class CreateServiceRequest extends BaseRequestAbstract
                 'min:2',
                 'max:255',
             ];
-            $rules["translations.description_$locale"] = 'sometimes|string|min:2';
+            $rules["translations.description_$locale"] = ['nullable', 'string', 'max:2000'];
         }
         $rules['image'] = [
             'nullable',

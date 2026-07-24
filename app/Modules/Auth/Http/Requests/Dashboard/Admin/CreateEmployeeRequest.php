@@ -3,9 +3,10 @@
 namespace App\Modules\Auth\Http\Requests\Dashboard\Admin;
 
 use App\Modules\Auth\Application\DTOS\Admin\EmployeeDTO;
-use Illuminate\Foundation\Http\FormRequest;
 use App\Modules\Base\Domain\Request\BaseRequestAbstract;
 use App\Modules\Base\Http\Rules\ImageBase64OrFileRule;
+use App\Modules\Auth\Http\Enums\EmployeeTypeEnum;
+use Illuminate\Validation\Rule;
 
 class CreateEmployeeRequest extends BaseRequestAbstract
 {
@@ -36,6 +37,13 @@ class CreateEmployeeRequest extends BaseRequestAbstract
             ],
             'email' => 'required|email|unique:employees,email',
             'password' => 'required|string|min:8',
+            'employee_type' => [
+                'required',
+                Rule::in([
+                    EmployeeTypeEnum::EMPLOYEE->value,
+                    EmployeeTypeEnum::BARBER->value,
+                ]),
+            ],
             'image' => [
                 'nullable',
                 new ImageBase64OrFileRule(),

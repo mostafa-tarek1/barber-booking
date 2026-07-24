@@ -32,9 +32,9 @@ class UpdateServiceRequest extends BaseRequestAbstract
                 'max:255',
                 Rule::unique('service_translations', 'name')
                     ->where('locale', $locale)
-                    ->ignore($this->service_id, 'service_id'),
+                    ->ignore($this->input('service_id'), 'service_id'),
             ];
-            $rules["translations.description_$locale"] = 'sometimes|string|min:2';
+            $rules["translations.description_$locale"] = ['nullable', 'string', 'max:2000'];
         }
 
         $rules['image'] = [
@@ -42,7 +42,7 @@ class UpdateServiceRequest extends BaseRequestAbstract
             new ImageBase64OrFileRule(),
         ];
         $rules['price'] = ['sometimes', 'numeric', 'min:0'];
-        $rules['duration'] = ['sometimes', 'integer', 'min:0'];
+        $rules['duration'] = ['sometimes', 'integer', 'min:1'];
         $rules['is_active'] = ['sometimes', 'boolean'];
         return $rules;
     }

@@ -2,12 +2,8 @@
 
 namespace App\Modules\Auth\Http\Controllers\Dashboard\Employee;
 
-use App\Modules\Auth\Http\Middleware\UserIsSuperAdmin;
 use App\Modules\Auth\Http\Requests\Dashboard\Admin\FetchEmployeeRequest;
 use App\Modules\Auth\Application\UseCases\Admin\EmployeeUseCase;
-use Illuminate\Http\Request;
-use GuzzleHttp\Promise\Create;
-use App\Http\Controllers\Controller;
 use Illuminate\Routing\Controller as BaseController;
 use App\Modules\Auth\Http\Requests\Api\Admin\LoginRequest;
 use App\Modules\Auth\Http\Requests\Api\Admin\LogoutRequest;
@@ -23,7 +19,6 @@ class EmployeeController extends BaseController
     public function __construct(EmployeeUseCase $employeeUseCase)
     {
         $this->employeeUseCase = $employeeUseCase;
-        $this->middleware(UserIsSuperAdmin::class)->only(['createEmployee']);
     }
 
     public function login(LoginRequest $request)

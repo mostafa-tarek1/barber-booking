@@ -34,7 +34,7 @@ class ServiceUseCase
             $services = $this->serviceRepository->filter(
                 $serviceFilterDto,
                 operator: 'like',
-                translatableFields: ['title', 'description'],
+                translatableFields: ['name', 'description'],
                 paginate: $serviceFilterDto->paginate,
                 limit: $serviceFilterDto->limit
             );
@@ -112,16 +112,7 @@ class ServiceUseCase
     public function updateService(ServiceDTO $serviceDTO): DataStatus
     {
         try {
-            // The DTO does not carry service_id in this project; expect caller to provide it via filter DTO
-            // We'll attempt to update by an id property if present inside the DTO, otherwise throw
-            // determine id from possible DTO properties without direct property access
-            $dtoVars = get_object_vars($serviceDTO);
-            $id = $dtoVars['service_id'] ?? $dtoVars['id'] ?? $dtoVars['serviceId'] ?? null;
-
-            if (empty($id)) {
-                throw new \Exception('service id is required to update');
-            }
-            $service = $this->serviceRepository->update($id, $serviceDTO);
+            $service = $this->serviceRepository->update($serviceDTO->service_id, $serviceDTO);
 
             return DataSuccess(
                 status: true,
@@ -150,19 +141,11 @@ class ServiceUseCase
                 );
             }
 
-            if ($service->children && $service->children->count() > 0) {
-                return DataFailed(
-                    status: false,
-                    statusCode: 400,
-                    message: 'Service has children'
-                );
-            }
-
-            $this->serviceRepository->delete($serviceFilterDto->service_id);
+            $service->update(['is_active' => false]);
 
             return DataSuccess(
                 status: true,
-                message: 'Service deleted successfully',
+                message: 'Service disabled successfully',
             );
         } catch (\Exception $e) {
             return DataFailed(
