@@ -7,6 +7,7 @@ use App\Modules\Booking\Http\Requests\Booking\CreateBookingRequest;
 use App\Modules\Booking\Http\Requests\Booking\FetchBookingRequest;
 use App\Modules\Booking\Http\Requests\Booking\UpdateBookingRequest;
 use App\Modules\Booking\Application\UseCases\Booking\BookingUseCase;
+use App\Modules\Booking\Application\Services\BarberAvailabilityService;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Modules\Blog\Application\Enums\View\ViewTypeEnum;
@@ -14,10 +15,12 @@ use App\Modules\Blog\Application\Enums\View\ViewTypeEnum;
 class BookingController extends Controller
 {
     protected $bookingUseCase;
+    protected BarberAvailabilityService $availabilityService;
 
-    public function __construct(BookingUseCase $bookingUseCase)
+    public function __construct(BookingUseCase $bookingUseCase, BarberAvailabilityService $availabilityService)
     {
         $this->bookingUseCase = $bookingUseCase;
+        $this->availabilityService = $availabilityService;
     }
 
     public function createBooking(CreateBookingRequest $request)
@@ -48,11 +51,33 @@ class BookingController extends Controller
         );
 
         return response()->json([
-            'status' => true,
+            'status' => 200,
             'message' => 'Available time slots retrieved successfully',
             'data' => [
                 'suggested_slots' => $suggestedSlots
             ]
+        ]);
+    }
+
+    public function availableSlots(Request $request)
+    {
+        $validated = $request->validate([
+            'employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'date' => ['required', 'date', 'after_or_equal:today'],
+            'services' => ['required', 'array', 'min:1'],
+            'services.*' => ['integer', 'distinct', 'exists:services,id'],
+        ]);
+
+        return response()->json([
+            'status' => 200,
+            'message' => 'Available slots fetched successfully',
+            'data' => [
+                'slots' => $this->availabilityService->availableSlots(
+                    $validated['employee_id'],
+                    $validated['date'],
+                    $validated['services']
+                ),
+            ],
         ]);
     }
 }

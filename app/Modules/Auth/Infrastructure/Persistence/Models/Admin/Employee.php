@@ -4,38 +4,34 @@ namespace App\Modules\Auth\Infrastructure\Persistence\Models\Admin;
 
 use App\Modules\Auth\Domain\Entity\AuthEmployeeEntity;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\EmployeeDevice\EmployeeDevice;
+use App\Modules\Auth\Infrastructure\Persistence\Models\Attendance\AttendanceRecord;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Permission\Permission;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Laravel\Sanctum\HasApiTokens;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Notifications\Notifiable;
-use App\Modules\Base\Domain\Entity\AuthEntityAbstract;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
+use App\Modules\Auth\Infrastructure\Persistence\Repositories\Admin\EmployeeRepository;
 use App\Modules\Base\Domain\Holders\AuthHolderInterface;
 use App\Modules\Base\Domain\Services\Email\EmailNotification;
-use App\Modules\Auth\Infrastructure\Persistence\Repositories\Admin\EmployeeRepository;
 use App\Modules\Blog\Infrastructure\Persistence\Models\Blog\Blog;
 use App\Modules\Blog\Infrastructure\Persistence\Models\Category\Category;
 use App\Modules\Blog\Infrastructure\Persistence\Models\Hashtag\Hashtag;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
-use App\Modules\Rooms\Infrastructure\Persistence\Models\Room\Room;
-use App\Modules\Rooms\Infrastructure\Persistence\Models\RoomLocation\RoomLocation;
+use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
 use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
 use Illuminate\Database\Eloquent\Casts\Attribute;
-
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Hash;
+use Laravel\Sanctum\HasApiTokens;
 
 class Employee extends Authenticatable implements AuthHolderInterface
 {
     /** @use HasFactory<\Database\Factories\EmployeeFactory> */
-    use HasFactory, Notifiable, HasApiTokens;
+    use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
      */
-
     protected $table = 'employees';
 
     protected $fillable = [
@@ -93,9 +89,10 @@ class Employee extends Authenticatable implements AuthHolderInterface
     protected function imageLink(): Attribute
     {
         return Attribute::make(
-            get: fn() => $this->getAttribute('image') ? asset("storage/{$this->getAttribute('image')}") : null
+            get: fn () => $this->getAttribute('image') ? asset("storage/{$this->getAttribute('image')}") : null
         );
     }
+
     public function setPasswordAttribute($value)
     {
         $this->attributes['password'] = Hash::make($value);
@@ -128,6 +125,7 @@ class Employee extends Authenticatable implements AuthHolderInterface
     {
         return $this->belongsTo(Employee::class, 'parent_id');
     }
+
     public function children()
     {
         return $this->hasMany(Employee::class, 'parent_id');
@@ -137,6 +135,7 @@ class Employee extends Authenticatable implements AuthHolderInterface
     {
         return $this->hasMany(Hashtag::class, 'created_by');
     }
+
     public function createdCategories()
     {
         return $this->hasMany(Category::class, 'created_by');
@@ -174,6 +173,16 @@ class Employee extends Authenticatable implements AuthHolderInterface
             ->withTimestamps();
     }
 
+    public function attendanceRecords()
+    {
+        return $this->hasMany(AttendanceRecord::class);
+    }
+
+    public function barberInvoices()
+    {
+        return $this->hasMany(Invoice::class, 'barber_id');
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
@@ -182,9 +191,9 @@ class Employee extends Authenticatable implements AuthHolderInterface
     /**
      * Send OTP to this user via email or WhatsApp.
      *
-     * @param string $fieldType
-     * @param UserRepository $userRepository
-     * @param string|null $otp
+     * @param  string  $fieldType
+     * @param  UserRepository  $userRepository
+     * @param  string|null  $otp
      * @return void
      */
     // public function sendOtp(string $fieldType, EmployeeRepository $employeeRepository, ?string $otp = null): void

@@ -16,8 +16,9 @@ class UserIsSuperAdmin
         $user = Auth::user();
         if (!$user || $user->employee_type !== EmployeeTypeEnum::SUPER_ADMIN->value) {
             return response()->json([
-                'status' => false,
+                'status' => 403,
                 'message' => 'Unauthorized access. Super Admins only.',
+                'data' => null,
             ], 403);
         }
 

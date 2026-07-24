@@ -17,7 +17,9 @@ class CheckIfUserIsBlocked
             $user->currentAccessToken()?->delete();
 
             return response()->json([
+                'status' => Response::HTTP_FORBIDDEN,
                 'message' => 'Your account has been blocked.',
+                'data' => null,
             ], Response::HTTP_FORBIDDEN);
         }
 

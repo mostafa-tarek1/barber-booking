@@ -7,6 +7,8 @@ use App\Modules\Booking\Http\Requests\Booking\CreateBookingRequest;
 use App\Modules\Booking\Http\Requests\Booking\FetchBookingRequest;
 use App\Modules\Booking\Http\Requests\Booking\UpdateBookingRequest;
 use App\Modules\Booking\Application\UseCases\Booking\BookingUseCase;
+use App\Modules\Booking\Application\Services\BarberAvailabilityService;
+use App\Modules\Booking\Infrastructure\Persistence\Models\BarberTimeOff\BarberTimeOff;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Modules\Blog\Application\Enums\View\ViewTypeEnum;
@@ -14,10 +16,12 @@ use App\Modules\Blog\Application\Enums\View\ViewTypeEnum;
 class BookingController extends Controller
 {
     protected $bookingUseCase;
+    protected BarberAvailabilityService $availabilityService;
 
-    public function __construct(BookingUseCase $bookingUseCase)
+    public function __construct(BookingUseCase $bookingUseCase, BarberAvailabilityService $availabilityService)
     {
         $this->bookingUseCase = $bookingUseCase;
+        $this->availabilityService = $availabilityService;
     }
 
     /**
@@ -241,11 +245,88 @@ class BookingController extends Controller
         );
 
         return response()->json([
-            'status' => true,
+            'status' => 200,
             'message' => 'Available time slots retrieved successfully',
             'data' => [
                 'suggested_slots' => $suggestedSlots
             ]
         ]);
+    }
+
+    public function availableSlots(Request $request)
+    {
+        $validated = $request->validate([
+            'employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'date' => ['required', 'date', 'after_or_equal:today'],
+            'services' => ['required', 'array', 'min:1'],
+            'services.*' => ['integer', 'distinct', 'exists:services,id'],
+            'exclude_booking_id' => ['nullable', 'integer', 'exists:bookings,id'],
+        ]);
+
+        return response()->json([
+            'status' => 200,
+            'message' => 'Available slots fetched successfully',
+            'data' => [
+                'slots' => $this->availabilityService->availableSlots(
+                    $validated['employee_id'],
+                    $validated['date'],
+                    $validated['services'],
+                    $validated['exclude_booking_id'] ?? null
+                ),
+            ],
+        ]);
+    }
+
+    public function fetchTimeOffs(Request $request)
+    {
+        $validated = $request->validate([
+            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ]);
+
+        $timeOffs = BarberTimeOff::query()
+            ->with('barber:id,first_name,last_name')
+            ->when($validated['employee_id'] ?? null, fn ($query, $id) => $query->where('employee_id', $id))
+            ->when($validated['date_from'] ?? null, fn ($query, $date) => $query->whereDate('date', '>=', $date))
+            ->when($validated['date_to'] ?? null, fn ($query, $date) => $query->whereDate('date', '<=', $date))
+            ->orderBy('date')
+            ->orderBy('from_hour')
+            ->get();
+
+        return response()->json(['status' => 200, 'message' => 'Time offs fetched successfully', 'data' => $timeOffs]);
+    }
+
+    public function createTimeOff(Request $request)
+    {
+        $validated = $request->validate([
+            'employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'date' => ['required', 'date', 'after_or_equal:today'],
+            'is_day_off' => ['required', 'boolean'],
+            'from_hour' => ['required_if:is_day_off,false', 'nullable', 'date_format:H:i'],
+            'to_hour' => ['required_if:is_day_off,false', 'nullable', 'date_format:H:i', 'different:from_hour'],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $validated['created_by'] = $request->user()?->id;
+        if ($validated['is_day_off']) {
+            $validated['from_hour'] = null;
+            $validated['to_hour'] = null;
+        }
+
+        $timeOff = BarberTimeOff::create($validated);
+
+        return response()->json(['status' => 201, 'message' => 'Time off created successfully', 'data' => $timeOff], 201);
+    }
+
+    public function deleteTimeOff(Request $request)
+    {
+        $validated = $request->validate([
+            'time_off_id' => ['required', 'integer', 'exists:barber_time_offs,id'],
+        ]);
+
+        BarberTimeOff::query()->findOrFail($validated['time_off_id'])->delete();
+
+        return response()->json(['status' => 200, 'message' => 'Time off deleted successfully', 'data' => null]);
     }
 }

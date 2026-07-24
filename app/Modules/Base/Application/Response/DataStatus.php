@@ -188,32 +188,26 @@ class DataStatus
 
     public function response(string $route = '')
     {
-        $response = [];
+        $statusCode = $this->getStatusCode();
+        $response = [
+            'status' => $statusCode,
+            'message' => $this->getMessage(),
+        ];
 
-        if(!empty($route)) {
+        if (!empty($route)) {
             $response['route'] = $route;
         }
-        if($this->getStatusCode() >= 400) {
-            $this->setStatus(false);
-            $this->setStatusTitle(self::STATUS_ERROR);
-        }
-        $response['status'] = $this->getStatus();
-        if($this->getStatus() !== JsonResponse::HTTP_OK && !empty($this->getErrors())) {
-            $response['errors'] = $this->getErrors();
-        }
 
-        $response['message'] = $this->getMessage();
-        if(true/* $this->getStatusTitle() === self::STATUS_SUCCESS && $this->getStatus() */) {
-            $response['data'] = $this->getResourceData() ?? $this->getData();
-            if($response['data'] === null) {
-                unset($response['data']);
-             }
+        if ($statusCode >= 400 && !empty($this->getErrors())) {
+            $response['data'] = ['errors' => $this->getErrors()];
+        } else {
+            $data = $this->getResourceData() ?? $this->getData();
+            if ($data !== null) {
+                $response['data'] = $data;
+            }
         }
 
-
-
-
-        return response()->json($response, $this->getStatusCode());
+        return response()->json($response, $statusCode);
     }
 
 

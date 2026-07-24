@@ -20,9 +20,9 @@ class CreateBookingRequest extends BaseRequestAbstract
         return [
             'phone' => ['nullable', 'string', 'min:9', 'max:13'],
             'email' => ['nullable', 'email', 'max:255'],
-            'date' => ['nullable', 'date', 'after_or_equal:today'],
-            'name' => ['nullable', 'string', 'max:255'],
-            'from_hour' => ['nullable', 'date_format:H:i'],
+            'date' => ['required', 'date', 'after_or_equal:today'],
+            'name' => ['required', 'string', 'max:255'],
+            'from_hour' => ['required', 'date_format:H:i'],
             'to_hour' => ['nullable', 'date_format:H:i', 'after:from_hour'],
             'status' => ['sometimes', Rule::enum(BookingStatusEnum::class)],
             'services' => ['required', 'array', 'min:1'],

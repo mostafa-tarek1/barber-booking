@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('api')->group(function () {
 
     // Public routes
+    Route::get("barbers", [EmployeeController::class, "barbers"]);
+
     Route::controller(UserController::class)->group(function () {
         Route::post('register', 'register');
         Route::post('login', 'login');

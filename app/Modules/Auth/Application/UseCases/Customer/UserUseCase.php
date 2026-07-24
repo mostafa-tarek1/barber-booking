@@ -11,8 +11,8 @@ use App\Modules\Auth\Application\DTOS\Customer\UserAddressDTO;
 use App\Modules\Auth\Application\DTOS\Customer\UserDTO;
 use App\Modules\Auth\Application\DTOS\Customer\UserFilterDTO;
 use App\Modules\Auth\Http\Resources\Customer\UserResource;
-use App\Modules\Auth\Http\Resources\Dashboard\Customer\UserResource as DashboardUserResource;
 use App\Modules\Auth\Http\Resources\Dashboard\Customer\UserDetailsResource as DashboardUserDetailsResource;
+use App\Modules\Auth\Http\Resources\Dashboard\Customer\UserResource as DashboardUserResource;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Customer\User;
 use App\Modules\Auth\Infrastructure\Persistence\Repositories\Customer\UserAddressRepository;
 use App\Modules\Auth\Infrastructure\Persistence\Repositories\Customer\UserDevice\UserDeviceRepository;
@@ -20,7 +20,7 @@ use App\Modules\Auth\Infrastructure\Persistence\Repositories\Customer\UserReposi
 use App\Modules\Base\Application\Response\DataFailed;
 use App\Modules\Base\Application\Response\DataStatus;
 use App\Modules\Base\Application\Response\DataSuccess;
-use App\Modules\Category\Application\Enums\View\ViewTypeEnum;
+use App\Modules\Blog\Application\Enums\View\ViewTypeEnum;
 use App\Modules\Notification\Application\DTOS\Topic\TopicDTO;
 use App\Modules\Notification\Application\DTOS\TopicUser\TopicUserDTO;
 use App\Modules\Notification\Infrastructure\Persistence\Repositories\Topic\TopicRepository;
@@ -29,37 +29,34 @@ use Exception;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 class UserUseCase
 {
-
     protected $userRepository;
+
     protected $userDeviceRepository;
+
     protected $userAddressRepository;
+
     protected $topicRepository;
+
     protected $TopicUserRepository;
+
     /**
-     *  @var User $user
+     * @var User
      */
     protected $user;
-
 
     public function __construct(UserRepository $userRepository, UserAddressRepository $userAddressRepository)
     {
         $this->userRepository = $userRepository;
         $this->userAddressRepository = $userAddressRepository;
-        $this->userDeviceRepository = new UserDeviceRepository();
-        $this->topicRepository = new TopicRepository();
-        $this->TopicUserRepository = new TopicUserRepository();
+        $this->userDeviceRepository = new UserDeviceRepository;
     }
 
     /**
      * Register a new user.
-     *
-     * @param RegisterDTO $registerDTO
-     * @return DataStatus
      */
     public function register(RegisterDTO $registerDTO): DataStatus
     {
@@ -68,8 +65,9 @@ class UserUseCase
             DB::beginTransaction();
             /** @var User $user */
             $user = $this->userRepository->create($registerDTO);
-            if (!$user || !$user->id || $user instanceof Exception) {
+            if (! $user || ! $user->id || $user instanceof Exception) {
                 DB::rollBack();
+
                 return new DataFailed(
                     statusCode: Response::HTTP_BAD_REQUEST,
                     message: ' failed to create user'
@@ -102,6 +100,7 @@ class UserUseCase
                 // $user['location'] = $location != null ? $location['data'] : null;
                 // $user['nationality'] = $nationality != null ? $nationality['data'] : null;
                 DB::commit();
+
                 return new DataSuccess(
                     message: 'success',
                     data: $user,
@@ -109,6 +108,7 @@ class UserUseCase
                 );
             }
             DB::rollBack();
+
             return new DataFailed(
                 statusCode: Response::HTTP_BAD_REQUEST,
                 message: ' failed to create user'
@@ -116,6 +116,7 @@ class UserUseCase
         } catch (\Exception $e) {
             DB::rollBack();
             $statusCode = $this->handleStatusCode($e);
+
             return new DataFailed(
                 statusCode: $statusCode,
                 message: $e->getMessage()
@@ -125,22 +126,28 @@ class UserUseCase
 
     public function handleNotficationTopicSubscription(User $user, string $baseName = 'register'): DataStatus
     {
+        if (! class_exists(TopicRepository::class) || ! class_exists(TopicUserRepository::class)) {
+            return new DataSuccess(message: 'Notification topics are not configured');
+        }
+
         try {
+            $this->topicRepository ??= new TopicRepository;
+            $this->TopicUserRepository ??= new TopicUserRepository;
             $baseName = 'register';
             // 1. Find an existing topic with available capacity
             $topic = $this->topicRepository->getAvailableTopicByBaseName($baseName);
 
             // 2. If no topic found, create a new one with incremented order
-            if (!$topic) {
+            if (! $topic) {
                 $order = $this->topicRepository->getNextOrderForBaseName($baseName);
                 $topicDTO = TopicDTO::fromArray([
-                    'name' => $baseName . '-' . $order,
+                    'name' => $baseName.'-'.$order,
                     'userIdToSubscribe' => $user->id,
                     'order' => $order,
                 ]);
                 $topic = $this->topicRepository->create($topicDTO);
             }
-            if (!$topic || !$topic->id || $topic instanceof Exception) {
+            if (! $topic || ! $topic->id || $topic instanceof Exception) {
                 return new DataFailed(
                     statusCode: Response::HTTP_BAD_REQUEST,
                     message: ' failed to create topic'
@@ -150,13 +157,13 @@ class UserUseCase
             $TopicUserDTO = TopicUserDTO::fromArray([
                 'topic_id' => $topic->id,
                 'user_id' => $user->id,
-                'type' => $topic->type
+                'type' => $topic->type,
             ]);
             $this->TopicUserRepository->create($TopicUserDTO);
 
             $subscribeTopicResponse = $this->topicRepository->subscripeToTopic(TopicDTO::fromArray([
                 'userIdToSubscribe' => $user->id,
-                'name' => $topic->name
+                'name' => $topic->name,
             ]), $topic);
             // (Optional) You may want to refresh the topic count here if needed
 
@@ -171,9 +178,6 @@ class UserUseCase
 
     /**
      * Log in a user.
-     *
-     * @param LoginDTO $loginDTO
-     * @return DataStatus
      */
     public function login(LoginDTO $loginDTO): DataStatus
     {
@@ -197,18 +201,21 @@ class UserUseCase
                 $nationality = $user->nationality_id != null ? $this->userRepository->getNationality($user->id) : null;
                 $user['location'] = $location != null ? $location['data'] : null;
                 $user['nationality'] = $nationality != null ? $nationality['data'] : null;
+
                 // dd(new UserResource($user));
                 return new DataSuccess(
                     message: 'success',
                     data: new UserResource($user)
                 );
             }
+
             return new DataFailed(
                 message: 'The provided credentials are incorrect.',
                 statusCode: Response::HTTP_BAD_REQUEST
             );
         } catch (\Exception $e) {
             $statusCode = $this->handleStatusCode($e);
+
             return new DataFailed(
                 statusCode: $statusCode,
                 message: $e->getMessage()
@@ -218,9 +225,6 @@ class UserUseCase
 
     /**
      * Check user credentials and send OTP if valid.
-     *
-     * @param CheckCredentialDTO $checkCredentialDTO
-     * @return DataStatus
      */
     public function checkCredential(CheckCredentialDTO $checkCredentialDTO): DataStatus
     {
@@ -234,18 +238,21 @@ class UserUseCase
                     $user->sendOtp($fieldType, $this->userRepository);
                 } catch (\Exception $e) {
                 }
+
                 return new DataSuccess(
                     status: true,
                     message: 'success',
                     data: true
                 );
             }
+
             return new DataFailed(
                 message: 'The provided credentials are incorrect.',
                 statusCode: Response::HTTP_BAD_REQUEST
             );
         } catch (\Exception $e) {
             $statusCode = $this->handleStatusCode($e);
+
             return new DataFailed(
                 statusCode: $statusCode,
                 status: false,
@@ -256,9 +263,6 @@ class UserUseCase
 
     /**
      * Verify the provided OTP code.
-     *
-     * @param CheckCodeDTO $checkCodeDTO
-     * @return DataStatus
      */
     public function checkCode(CheckCodeDTO $checkCodeDTO): DataStatus
     {
@@ -285,8 +289,9 @@ class UserUseCase
 
             $cachedOtp = getCache("otp_{$user->$fieldType}");
 
-            if (!$cachedOtp || !checkOTP($checkCodeDTO->code, $cachedOtp)) {
+            if (! $cachedOtp || ! checkOTP($checkCodeDTO->code, $cachedOtp)) {
                 DB::rollBack();
+
                 return new DataFailed(
                     statusCode: Response::HTTP_BAD_REQUEST,
                     message: 'The provided code is incorrect.'
@@ -295,6 +300,7 @@ class UserUseCase
 
             forgetCache("otp_{$user->$fieldType}");
             DB::commit();
+
             return new DataSuccess(
                 status: true,
                 message: 'success',
@@ -302,6 +308,7 @@ class UserUseCase
             );
         } catch (\Exception $e) {
             DB::rollBack();
+
             return new DataFailed(
                 statusCode: $this->handleStatusCode($e),
                 message: $e->getMessage()
@@ -311,9 +318,6 @@ class UserUseCase
 
     /**
      * Reset the user's password using the provided OTP code.
-     *
-     * @param ResetPasswordDTO $resetPasswordDTO
-     * @return DataStatus
      */
     public function resetPassword(ResetPasswordDTO $resetPasswordDTO): DataStatus
     {
@@ -322,7 +326,7 @@ class UserUseCase
             $credentials = $resetPasswordDTO->credential();
             $fieldType = checkCredentialType($credentials);
             $cachedOtp = getCache("otp_{$user->$fieldType}");
-            if (!$cachedOtp || !checkOTP($resetPasswordDTO->code, $cachedOtp)) {
+            if (! $cachedOtp || ! checkOTP($resetPasswordDTO->code, $cachedOtp)) {
                 return new DataFailed(
                     status: false,
                     message: 'The provided code is incorrect.'
@@ -331,6 +335,7 @@ class UserUseCase
             $this->userRepository->update($user->id, $resetPasswordDTO);
             // Remove OTP from cache after successful reset
             forgetCache("otp_{$user->$fieldType}");
+
             return new DataSuccess(
                 status: true,
                 message: 'success',
@@ -374,12 +379,12 @@ class UserUseCase
         }
     }
 
-
     public function fetchUserDetails(UserDTO $userDTO, $viewType = ViewTypeEnum::DASHBOARD->value): DataStatus
     {
         try {
             $user = $this->userRepository->getById($userDTO->user_id);
             $resource = $this->HandelCategoryDetailResource($user, $viewType);
+
             return new DataSuccess(
                 status: true,
                 message: 'success',
@@ -398,8 +403,9 @@ class UserUseCase
         try {
             DB::beginTransaction();
             $user = $this->userRepository->create($UserDTO);
-            if (!$user || !$user->id || $user instanceof Exception) {
+            if (! $user || ! $user->id || $user instanceof Exception) {
                 DB::rollBack();
+
                 return new DataFailed(
                     statusCode: Response::HTTP_BAD_REQUEST,
                     message: ' failed to create user'
@@ -417,6 +423,7 @@ class UserUseCase
             $UserDTO->user_id = $user->id;
             $this->handleUserAddress($UserDTO);
             DB::commit();
+
             return new DataSuccess(
                 status: true,
                 message: 'success',
@@ -424,6 +431,7 @@ class UserUseCase
             );
         } catch (\Exception $e) {
             DB::rollBack();
+
             return new DataFailed(
                 status: false,
                 message: $e->getMessage()
@@ -440,13 +448,15 @@ class UserUseCase
             // Step 2: update user location
             $this->handleUserAddress($UserDTO);
             DB::commit();
+
             return new DataSuccess(
                 status: true,
                 message: 'success',
-                data: new DashboardUserDetailsResource($user) //DashboardUserResource($user)
+                data: new DashboardUserDetailsResource($user) // DashboardUserResource($user)
             );
         } catch (\Exception $e) {
             DB::rollBack();
+
             return new DataFailed(
                 status: false,
                 message: $e->getMessage()
@@ -475,7 +485,7 @@ class UserUseCase
             $another_addresses = $userDTO->another_address;
             // dd($another_addresses);
             // $sentAddressesIds1 = array_filter(array_column($another_addresses, 'id'),fn($id) => !is_null($id));
-            $sentAddressesIds = array_filter(array_map(fn($a) => $a['id'] ?? null, $another_addresses));
+            $sentAddressesIds = array_filter(array_map(fn ($a) => $a['id'] ?? null, $another_addresses));
 
             // 1. Delete addresses for this user_id that are NOT in the sent IDs
             $this->userAddressRepository->deleteByUserIdExceptIds($user_id, $sentAddressesIds);
@@ -484,10 +494,10 @@ class UserUseCase
                     'id' => $value['id'] ?? null,
                     'user_id' => $user_id,
                     'is_master' => false,
-                    'file_address' => isset($value['file_address']) ? uploadImage(file: $value['file_address'], folder: 'users/' . $user_id . '/addresses') : null,
+                    'file_address' => isset($value['file_address']) ? uploadImage(file: $value['file_address'], folder: 'users/'.$user_id.'/addresses') : null,
                     'address' => $value['address'] ?? null,
                     'lat' => $value['lat'] ?? null,
-                    'lng' => $value['lng'] ?? null
+                    'lng' => $value['lng'] ?? null,
                 ]));
 
                 $address = $this->userAddressRepository->create($anotherAddressDto);
@@ -496,8 +506,6 @@ class UserUseCase
             }
         }
     }
-
-
 
     public function deleteUser(UserDTO $UserDTO): DataStatus
     {
@@ -511,7 +519,7 @@ class UserUseCase
                 ->performedOn($user_e)
                 ->event('deleted')
                 ->withProperties(['email' => $user_e->email, 'phone' => $user_e->phone])
-                ->log('User deleted: ' . $UserDTO->user_id);
+                ->log('User deleted: '.$UserDTO->user_id);
 
             $user = $this->userRepository->delete($UserDTO->user_id);
 
@@ -532,11 +540,11 @@ class UserUseCase
         }
     }
 
-
     public function forceLogout(UserDTO $UserDTO): DataStatus
     {
         try {
             $user = $this->userRepository->forceLogout($UserDTO->user_id);
+
             return new DataSuccess(
                 status: true,
                 message: 'success',
@@ -559,9 +567,10 @@ class UserUseCase
                 ->performedOn($user_e)
                 ->event('blocked')
                 ->withProperties(['email' => $user_e->email, 'phone' => $user_e->phone])
-                ->log('User blocked: ' . $UserDTO->user_id);
+                ->log('User blocked: '.$UserDTO->user_id);
 
             $user = $this->userRepository->blockUser($UserDTO->user_id);
+
             return new DataSuccess(
                 status: true,
                 message: 'success',
@@ -584,8 +593,9 @@ class UserUseCase
                 ->performedOn($user_e)
                 ->event('unblocked')
                 ->withProperties(['email' => $user_e->email, 'phone' => $user_e->phone])
-                ->log('User unblocked: ' . $UserDTO->user_id);
+                ->log('User unblocked: '.$UserDTO->user_id);
             $user = $this->userRepository->unblockUser($UserDTO->user_id);
+
             return new DataSuccess(
                 status: true,
                 message: 'success',
@@ -598,11 +608,12 @@ class UserUseCase
             );
         }
     }
+
     public function toggleUserApproval(UserDTO $userDTO): DataStatus
     {
         try {
             $user = $this->userRepository->getById($userDTO->user_id);
-            $user->update(['is_approved' => !$user->is_approved]);
+            $user->update(['is_approved' => ! $user->is_approved]);
             $user->refresh();
             if ($user->is_approved) {
                 $message = 'Approved';
@@ -614,7 +625,8 @@ class UserUseCase
                 ->performedOn($user)
                 ->event('approved')
                 ->withProperties(['email' => $user->email, 'phone' => $user->phone])
-                ->log('User ' . $user->id . ' ' . $message);
+                ->log('User '.$user->id.' '.$message);
+
             return new DataSuccess(
                 status: true,
                 message: $message,
@@ -628,8 +640,6 @@ class UserUseCase
         }
     }
 
-
-
     public function getUsersDeviceTokens(UserFilterDTO $userFilterDTO): DataStatus
     {
         try {
@@ -641,6 +651,7 @@ class UserUseCase
                     message: 'No users found for the given user IDs.'
                 );
             }
+
             return new DataSuccess(
                 status: true,
                 message: 'success',
@@ -658,6 +669,7 @@ class UserUseCase
     {
         try {
             $userIds = $this->userRepository->getAll()->pluck('id');
+
             return new DataSuccess(
                 status: true,
                 message: 'success',
@@ -676,6 +688,7 @@ class UserUseCase
         $statusCode = $e->getCode() && $e->getCode() != 0 && $e->getCode() < 500
             ? $e->getCode()
             : Response::HTTP_INTERNAL_SERVER_ERROR; // or another default
+
         return $statusCode;
     }
 
@@ -688,6 +701,7 @@ class UserUseCase
         } else {
             $resource = DashboardUserResource::collection($categories);
         }
+
         return $resource;
     }
 

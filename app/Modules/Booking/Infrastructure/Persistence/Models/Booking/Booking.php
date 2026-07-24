@@ -4,6 +4,7 @@ namespace App\Modules\Booking\Infrastructure\Persistence\Models\Booking;
 
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
+use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
 use Illuminate\Database\Eloquent\Model;
 use Astrotomic\Translatable\Contracts\Translatable as TranslatableContract;
 use Astrotomic\Translatable\Translatable;
@@ -59,5 +60,10 @@ class Booking extends Model implements TranslatableContract
             ->withPivot(['service_id', 'created_at', 'updated_at'])
             ->limit(1)
             ->withDefault();
+    }
+
+    public function invoice()
+    {
+        return $this->hasOne(Invoice::class);
     }
 }
