@@ -27,8 +27,10 @@ class UpdateBookingRequest extends BaseRequestAbstract
             'from_hour' => ['nullable', 'date_format:H:i'],
             'to_hour' => ['nullable', 'date_format:H:i', 'after:from_hour'],
             'status' => ['sometimes', Rule::enum(BookingStatusEnum::class)],
-            'services' => ['sometimes', 'array', 'min:1'],
-            'services.*' => ['exists:services,id'],
+            'services' => ['sometimes', 'array'],
+            'services.*' => ['integer', 'distinct', 'exists:services,id'],
+            'packages' => ['sometimes', 'array'],
+            'packages.*' => ['integer', 'distinct', 'exists:packages,id'],
             'employee_id' => ['sometimes', 'exists:employees,id'],
         ];
     }

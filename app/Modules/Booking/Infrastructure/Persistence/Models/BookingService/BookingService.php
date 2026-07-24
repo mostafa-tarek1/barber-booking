@@ -14,7 +14,12 @@ class BookingService extends Pivot
     protected $fillable = [
         'booking_id',
         'service_id',
+        'package_id',
         'employee_id',
+        'name_snapshot',
+        'price_snapshot',
+        'duration_snapshot',
+        'quantity',
     ];
 
     public $timestamps = true;

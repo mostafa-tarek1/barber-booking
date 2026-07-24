@@ -5,8 +5,8 @@ namespace App\Modules\Booking\Application\Services;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Booking\Domain\Enums\BookingStatusEnum;
 use App\Modules\Booking\Infrastructure\Persistence\Models\BarberTimeOff\BarberTimeOff;
+use App\Modules\Booking\Infrastructure\Persistence\Models\BarberWorkingHour\BarberWorkingHour;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
-use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -16,22 +16,36 @@ class BarberAvailabilityService
     private const WORK_END = '01:00';
     private const SLOT_INTERVAL_MINUTES = 30;
 
+    public function __construct(private readonly BookingSelectionService $selectionService)
+    {
+    }
+
     public function availableSlots(
         int $employeeId,
         string $date,
         array $serviceIds,
+        ?int $excludeBookingId = null,
+        array $packageIds = []
+    ): array {
+        $selection = $this->selectionService->resolve($serviceIds, $packageIds);
+        return $this->availableSlotsForDuration($employeeId, $date, $selection['duration'], $excludeBookingId);
+    }
+
+    public function availableSlotsForDuration(
+        int $employeeId,
+        string $date,
+        int $duration,
         ?int $excludeBookingId = null
     ): array {
-        if (!$this->isBookableBarber($employeeId)) {
+        if ($duration < 1 || ! $this->isBookableBarber($employeeId) || $this->isDayOff($employeeId, $date)) {
             return [];
         }
 
-        $duration = $this->serviceDuration($serviceIds);
-        if ($duration === null || $this->isDayOff($employeeId, $date)) {
+        $workPeriod = $this->workPeriod($employeeId, $date);
+        if (! $workPeriod) {
             return [];
         }
-
-        [$workStart, $workEnd] = $this->workPeriod($date);
+        [$workStart, $workEnd] = $workPeriod;
         $busyPeriods = $this->busyPeriods($employeeId, $date, $excludeBookingId);
         $blockedPeriods = $this->blockedPeriods($employeeId, $date);
 
@@ -43,9 +57,21 @@ class BarberAvailabilityService
         string $date,
         array $serviceIds,
         string $fromHour,
+        ?int $excludeBookingId = null,
+        array $packageIds = []
+    ): bool {
+        return collect($this->availableSlots($employeeId, $date, $serviceIds, $excludeBookingId, $packageIds))
+            ->contains('from_time', substr($fromHour, 0, 5));
+    }
+
+    public function isDurationAvailable(
+        int $employeeId,
+        string $date,
+        int $duration,
+        string $fromHour,
         ?int $excludeBookingId = null
     ): bool {
-        return collect($this->availableSlots($employeeId, $date, $serviceIds, $excludeBookingId))
+        return collect($this->availableSlotsForDuration($employeeId, $date, $duration, $excludeBookingId))
             ->contains('from_time', substr($fromHour, 0, 5));
     }
 
@@ -60,16 +86,6 @@ class BarberAvailabilityService
             ->exists();
     }
 
-    private function serviceDuration(array $serviceIds): ?int
-    {
-        $uniqueIds = collect($serviceIds)->map(fn ($id) => (int) $id)->filter()->unique();
-        $services = Service::query()->whereIn('id', $uniqueIds)->where('is_active', true)->get();
-
-        return $services->count() === $uniqueIds->count()
-            ? (int) $services->sum('duration')
-            : null;
-    }
-
     private function isDayOff(int $employeeId, string $date): bool
     {
         return BarberTimeOff::query()
@@ -79,10 +95,24 @@ class BarberAvailabilityService
             ->exists();
     }
 
-    private function workPeriod(string $date): array
+    private function workPeriod(int $employeeId, string $date): ?array
     {
-        $start = Carbon::parse("$date " . self::WORK_START);
-        $end = Carbon::parse("$date " . self::WORK_END)->addDay();
+        $day = Carbon::parse($date);
+        $hours = BarberWorkingHour::query()
+            ->where('employee_id', $employeeId)
+            ->where('weekday', $day->dayOfWeek)
+            ->first();
+        if ($hours?->is_day_off) {
+            return null;
+        }
+
+        $fromHour = $hours?->from_hour ?? self::WORK_START;
+        $toHour = $hours?->to_hour ?? self::WORK_END;
+        $start = Carbon::parse("$date $fromHour");
+        $end = Carbon::parse("$date $toHour");
+        if ($end->lessThanOrEqualTo($start)) {
+            $end->addDay();
+        }
 
         return [$start, $end];
     }
@@ -91,7 +121,15 @@ class BarberAvailabilityService
     {
         $periods = Booking::query()
             ->whereDate('date', $date)
-            ->whereIn('status', [BookingStatusEnum::PENDING->value, BookingStatusEnum::CONFIRMED->value])
+            ->where(function ($query) {
+                $query->where('status', BookingStatusEnum::CONFIRMED->value)
+                    ->orWhere(function ($pending) {
+                        $pending->where('status', BookingStatusEnum::PENDING->value)
+                            ->where(fn ($expiry) => $expiry
+                                ->whereNull('expires_at')
+                                ->orWhere('expires_at', '>', now()));
+                    });
+            })
             ->when($excludeBookingId, fn ($query) => $query->where('id', '!=', $excludeBookingId))
             ->whereHas('services', fn ($query) => $query->where('booking_service.employee_id', $employeeId))
             ->get(['id', 'date', 'from_hour', 'to_hour'])

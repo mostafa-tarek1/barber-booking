@@ -50,13 +50,21 @@ class BookingResource extends JsonResource
                 return $this->services->map(function ($service) {
                     return [
                         'id' => $service->id,
-                        'name' => $service->name,
-                        'price' => $service->price,
-                        'duration' => $service->duration,
-                        'employee_id' => $service->pivot->employee_id ?? null
+                        'package_id' => $service->pivot->package_id,
+                        'name' => $service->pivot->name_snapshot ?: $service->name,
+                        'price' => $service->pivot->price_snapshot ?? $service->price,
+                        'duration' => $service->pivot->duration_snapshot ?? $service->duration,
+                        'quantity' => $service->pivot->quantity ?? 1,
+                        'employee_id' => $service->pivot->employee_id ?? null,
                     ];
                 });
             }),
+            'packages' => $this->whenLoaded('packages', fn () => $this->packages->map(fn ($package) => [
+                'id' => $package->id,
+                'name' => $package->pivot->name_snapshot ?: $package->name,
+                'price' => $package->pivot->price_snapshot,
+                'duration' => $package->pivot->duration_snapshot,
+            ])),
             'employee' => $this->whenLoaded('employee', function () {
                 return [
                     'id' => $this->employee->id,
@@ -66,10 +74,20 @@ class BookingResource extends JsonResource
 
             // معلومات إضافية محسنة
             'total_price' => $this->whenLoaded('services', function () {
-                return $this->services->sum('price');
+                $directServices = $this->services
+                    ->filter(fn ($service) => ! $service->pivot->package_id)
+                    ->sum(fn ($service) => ($service->pivot->price_snapshot ?? $service->price)
+                        * ($service->pivot->quantity ?? 1));
+
+                return $directServices + ($this->relationLoaded('packages')
+                    ? $this->packages->sum(fn ($package) => $package->pivot->price_snapshot)
+                    : 0);
             }),
             'total_duration' => $this->whenLoaded('services', function () {
-                return $this->services->sum('duration');
+                return $this->services->sum(fn ($service) =>
+                    ($service->pivot->duration_snapshot ?? $service->duration)
+                    * ($service->pivot->quantity ?? 1)
+                );
             }),
         ];
     }

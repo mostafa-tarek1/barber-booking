@@ -9,12 +9,8 @@ use App\Modules\Base\Domain\Holders\AuthHolder;
 use App\Modules\Base\Domain\Enums\AuthGurdTypeEnum;
 use App\Modules\Base\Application\Response\DataStatus;
 use App\Modules\Booking\Application\DTOS\Booking\BookingDTO;
-use App\Modules\Booking\Application\DTOS\BookingService\BookingServiceDTO;
 use App\Modules\Booking\Application\DTOS\Booking\BookingFilterDTO;
 use App\Modules\Booking\Infrastructure\Persistence\Repositories\Booking\BookingRepository;
-use App\Modules\Booking\Infrastructure\Persistence\Repositories\BookingService\BookingServiceRepository;
-use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
-use App\Modules\Employee\Infrastructure\Persistence\Models\Employee\Employee;
 use App\Modules\Booking\Domain\Enums\BookingStatusEnum;
 use App\Modules\Blog\Application\Enums\View\ViewTypeEnum;
 use App\Modules\Booking\Http\Resources\Dashboard\Booking\BookingResource as DashboardBookingResource;
@@ -23,31 +19,34 @@ use App\Modules\Booking\Http\Resources\Dashboard\Booking\BookingDetailResource a
 use App\Modules\Booking\Http\Resources\Api\Booking\BookingDetailResource as ApiBookingDetailResource;
 use App\Modules\Booking\Application\Services\BookingCacheService;
 use App\Modules\Booking\Application\Services\BarberAvailabilityService;
+use App\Modules\Booking\Application\Services\BookingSelectionService;
 use App\Modules\Statistics\Application\Services\StatisticsCacheService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class BookingUseCase
 {
     protected BookingRepository $bookingRepository;
-    protected BookingServiceRepository $bookingServiceRepository;
     protected BookingCacheService $cacheService;
     protected StatisticsCacheService $statisticsCacheService;
     protected BarberAvailabilityService $availabilityService;
+    protected BookingSelectionService $selectionService;
     protected $employee;
 
     public function __construct(
         BookingRepository $bookingRepository,
         BookingCacheService $cacheService,
         StatisticsCacheService $statisticsCacheService,
-        BarberAvailabilityService $availabilityService
+        BarberAvailabilityService $availabilityService,
+        BookingSelectionService $selectionService
     ) {
         $this->bookingRepository = $bookingRepository;
-        $this->bookingServiceRepository = new BookingServiceRepository();
         $this->cacheService = $cacheService;
         $this->statisticsCacheService = $statisticsCacheService;
         $this->availabilityService = $availabilityService;
+        $this->selectionService = $selectionService;
         $this->employee = AuthHolder::getInstance()->getAuth(AuthGurdTypeEnum::EMPLOYEE->value);
     }
 
@@ -83,7 +82,7 @@ class BookingUseCase
                     whereHasRelations: $barberId
                         ? ['services' => ['booking_service.employee_id' => $barberId]]
                         : [],
-                    withRelations: ['services', 'createdBy', 'updatedBy'] // Eager loading للعلاقات
+                    withRelations: ['services', 'packages', 'createdBy', 'updatedBy']
                 );
             });
 
@@ -119,8 +118,16 @@ class BookingUseCase
             // Load the relationships with the pivot data
             $booking->load([
                 'services' => function ($query) {
-                    $query->withPivot(['employee_id']);
-                }
+                    $query->withPivot([
+                        'employee_id',
+                        'package_id',
+                        'name_snapshot',
+                        'price_snapshot',
+                        'duration_snapshot',
+                        'quantity',
+                    ]);
+                },
+                'packages',
             ]);
 
             // Get the employee from the first service if available
@@ -157,97 +164,51 @@ class BookingUseCase
      */
     public function createBooking(BookingDTO $bookingDTO, $view = ViewTypeEnum::DASHBOARD->value): DataStatus
     {
-        DB::beginTransaction();
         try {
-            $bookingDTO->created_by = $this->employee->id ?? null;
+            $booking = DB::transaction(function () use ($bookingDTO, $view) {
+                $selection = $this->selectionService->resolve(
+                    $bookingDTO->services ?? [],
+                    $bookingDTO->packages ?? []
+                );
+                $this->lockBookableBarber($bookingDTO->employee_id);
 
-            // 1- التحقق من السيرفيسز
-            $serviceIds = collect($bookingDTO->services)->filter()->unique()->values()->toArray();
-            $services = Service::whereIn('id', $serviceIds)->where('is_active', 1)->get();
-
-            if ($services->isEmpty() || $services->count() !== count($serviceIds)) {
-                DB::rollBack();
-                return DataFailed(false, 'One or more selected services are invalid or inactive.');
-            }
-            // 1.5- التحقق من الموظف
-            $employee = AdminEmployee::where('id', $bookingDTO->employee_id)
-                ->where('employee_type', 'barber')
-                ->where('status', 'active')
-                ->where('is_active', true)
-                ->where('is_blocked', false)
-                ->lockForUpdate()
-                ->first();
-
-            if (!$employee) {
-                DB::rollBack();
-                return DataFailed(false, 'Selected employee is inactive or does not exist.');
-            }
-
-            // 2- حساب وقت النهاية من الـ duration
-            $totalDuration = (int) $services->sum('duration');
-            $from = Carbon::parse("{$bookingDTO->date} {$bookingDTO->from_hour}");
-            $to = (clone $from)->addMinutes($totalDuration);
-            $bookingDTO->to_hour = $to->format('H:i');
-            $bookingDTO->status = $view === ViewTypeEnum::DASHBOARD->value
-                ? BookingStatusEnum::CONFIRMED->value
-                : BookingStatusEnum::PENDING->value;
-
-            $isAvailable = $this->availabilityService->isAvailable(
-                $bookingDTO->employee_id,
-                $bookingDTO->date,
-                $serviceIds,
-                $from->format('H:i')
-            );
-
-            if (!$isAvailable) {
-                DB::rollBack();
-                $availableSlots = $this->availabilityService->availableSlots(
+                $from = Carbon::parse("{$bookingDTO->date} {$bookingDTO->from_hour}");
+                if (! $this->availabilityService->isDurationAvailable(
                     $bookingDTO->employee_id,
                     $bookingDTO->date,
-                    $serviceIds
-                );
+                    $selection['duration'],
+                    $from->format('H:i')
+                )) {
+                    throw new \DomainException('الموعد لم يعد متاحاً. اختر موعداً آخر.', 409);
+                }
 
-                return new DataFailed(
-                    errors: ['available_slots' => $availableSlots],
-                    status: false,
-                    statusCode: 409,
-                    message: 'الموعد لم يعد متاحاً. اختر موعداً آخر.'
-                );
-            }
+                $bookingDTO->created_by = $this->employee->id ?? null;
+                $bookingDTO->to_hour = $from->copy()->addMinutes($selection['duration'])->format('H:i');
+                $bookingDTO->status = $view === ViewTypeEnum::DASHBOARD->value
+                    ? BookingStatusEnum::CONFIRMED->value
+                    : BookingStatusEnum::PENDING->value;
+                $bookingDTO->expires_at = $bookingDTO->status === BookingStatusEnum::PENDING->value
+                    ? now()->addMinutes(15)
+                    : null;
 
-            // 4- إنشاء البوكينج
-            $booking = $this->bookingRepository->create($bookingDTO);
-            $booking->refresh();
+                $booking = $this->bookingRepository->create($bookingDTO);
+                $this->persistSelection($booking->id, $bookingDTO->employee_id, $selection);
+                $booking->load('services');
+                $this->sendBookingCreatedNotification($booking, $booking->services, $bookingDTO->employee_id);
 
-            // 5- ربط السيرفيسز بالـ pivot
-            $pivotData = [];
-            foreach ($services as $service) {
-                $pivotData[$service->id] = [
-                    'employee_id' => $bookingDTO->employee_id,
-                    // 'duration' => $service->duration,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-            $booking->services()->attach($pivotData);
+                return $booking;
+            });
 
-            // إرسال إشعار تلقائي
-            $this->sendBookingCreatedNotification($booking, $services, $bookingDTO->employee_id);
-
-            DB::commit();
-
-            // مسح Cache بعد إنشاء حجز جديد
             $this->cacheService->clearBookingCache();
             $this->statisticsCacheService->clearAllStatisticsCache();
 
-            $booking->load(['services', 'createdBy', 'updatedBy']);
+            $booking->load(['services', 'packages', 'createdBy', 'updatedBy']);
             $resource = $this->handleBookingDetailResource($booking, $view);
 
             return DataSuccess(true, 'Booking created successfully', $resource);
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('Error creating booking: ' . $e->getMessage());
-            return DataFailed(false, $e->getMessage());
+            return DataFailed(false, $e->getMessage(), $e->getCode() === 409 ? 409 : 400);
         }
     }
 
@@ -257,199 +218,88 @@ class BookingUseCase
      */
     public function updateBooking(BookingDTO $bookingDTO, $view = ViewTypeEnum::DASHBOARD->value): DataStatus
     {
-        DB::beginTransaction();
         try {
-            if (empty($bookingDTO->booking_id)) {
-                return DataFailed(false, 'Booking ID is required.');
-            }
+            $booking = DB::transaction(function () use ($bookingDTO) {
+                $booking = $this->bookingRepository->getModel()->newQuery()
+                    ->with(['services', 'packages', 'invoice'])
+                    ->lockForUpdate()
+                    ->findOrFail($bookingDTO->booking_id);
 
-            $booking = $this->bookingRepository->getById($bookingDTO->booking_id);
-            if (!$booking) {
-                return DataFailed(false, 'Booking not found.', 404);
-            }
+                $nextStatus = (int) ($bookingDTO->status ?? $booking->status);
+                $this->assertStatusTransition((int) $booking->status, $nextStatus);
 
-            $bookingDTO->updated_by = $this->employee->id ?? null;
-
-            // Process services if provided
-            $services = collect();
-            $totalDuration = 0;
-
-            if (!empty($bookingDTO->services)) {
-                // Handle both array of IDs and array of objects
-                $serviceIds = collect($bookingDTO->services)
-                    ->map(function ($item) {
-                        return is_array($item) ? ($item['id'] ?? $item) : $item;
-                    })
-                    ->filter()
-                    ->unique()
-                    ->values()
-                    ->toArray();
-
-                if (empty($serviceIds)) {
-                    return DataFailed(false, 'No valid services provided.');
-                }
-
-                $services = Service::whereIn('id', $serviceIds)
-                    ->where('is_active', 1)
-                    ->get();
-
-                if ($services->isEmpty() || $services->count() !== count($serviceIds)) {
-                    return DataFailed(false, 'One or more selected services are invalid or inactive.');
-                }
-
-                $totalDuration = (int) $services->sum('duration');
-            } else {
-                // Use existing services if not provided in update
-                $services = $booking->services()->withPivot(['employee_id', 'created_at', 'updated_at'])->get();
-                if ($services->isEmpty()) {
-                    return DataFailed(false, 'No services found for this booking.');
-                }
-                $totalDuration = (int) $services->sum('duration');
-            }
-
-            // Validate employee
-            $employeeId = $bookingDTO->employee_id ?? ($services->first()->pivot->employee_id ?? null);
-
-            if (!$employeeId) {
-                return DataFailed(false, 'Employee is required for the booking.');
-            }
-
-            $employee = AdminEmployee::where('id', $employeeId)
-                ->where('status', 'active')
-                ->first();
-
-            if (!$employee) {
-                return DataFailed(false, 'Selected employee is not available.');
-            }
-
-            // Handle date and time
-            $date = $bookingDTO->date ?? $booking->booking_date;
-            $fromHour = $bookingDTO->from_hour ?? $booking->from_hour;
-
-            try {
-                $from = Carbon::parse("{$date} {$fromHour}");
-                $to = (clone $from)->addMinutes($totalDuration);
-
-                // Check if booking time is outside allowed hours (1 PM to 1 AM)
-                $startHour = $from->copy()->setTime(13, 0, 0); // 1:00 PM
-                $endHour = $from->copy()->addDay()->setTime(1, 0, 0); // 1:00 AM next day
-
-                if ($from->lt($startHour) || $to->gt($endHour) || $to->lt($from)) {
-                    return DataFailed(false, 'يُسمح بالحجز من الساعة 1 ظهراً حتى 1 صباحاً فقط.');
-                }
-
-            } catch (\Exception $e) {
-                return DataFailed(false, 'تنسيق التاريخ أو الوقت غير صالح.');
-            }
-
-            // Check employee availability
-            $isBusy = $this->bookingRepository->checkEmployeeAvailability(
-                $employeeId,
-                $date,
-                $from->format('H:i:s'),
-                $to->format('H:i:s'),
-                $booking->id // Exclude current booking from availability check
-            );
-
-            if ($isBusy) {
-                // Get suggested time slots
-                $suggestedSlots = $this->getAvailableTimeSlots(
-                    $employeeId,
-                    $date,
-                    $from->format('H:i:s'),
-                    $to->format('H:i:s')
-                );
-
-                // Format the suggested slots as a string
-                $suggestedSlotsStr = '';
-                if (!empty($suggestedSlots)) {
-                    $formattedSlots = [];
-                    foreach ($suggestedSlots as $index => $slot) {
-                        $formattedSlots[] = sprintf(
-                            '%s. من %s إلى %s',
-                            $index + 1,
-                            date('g:i A', strtotime($slot['from'])),
-                            date('g:i A', strtotime($slot['to']))
-                        );
-                    }
-
-                    return new DataFailed(
-                        [
-                            'message' => 'الموظف محجز بالفعل في هذا التوقيت.',
-                            'suggested_slots' => $formattedSlots
-                        ],
-                        false,
-                        400
+                $selectionChanged = $bookingDTO->services !== null || $bookingDTO->packages !== null;
+                if ($selectionChanged) {
+                    $selection = $this->selectionService->resolve(
+                        $bookingDTO->services ?? [],
+                        $bookingDTO->packages ?? []
                     );
+                } else {
+                    $selection = [
+                        'duration' => (int) $booking->services->sum(
+                            fn ($service) => ($service->pivot->duration_snapshot ?? $service->duration)
+                                * ($service->pivot->quantity ?? 1)
+                        ),
+                    ];
                 }
 
-                return new DataFailed(
-                    ['message' => 'الموظف محجز بالفعل في هذا التوقيت.'],
-                    false,
-                    400
-                );
-            }
+                $employeeId = (int) ($bookingDTO->employee_id
+                    ?? $booking->services->first()?->pivot->employee_id);
+                $this->lockBookableBarber($employeeId);
 
-            // Update booking with all fields from DTO
-            $updateData = [
-                'booking_date' => $date,
-                'from_hour' => $from->format('H:i'),
-                'to_hour' => $to->format('H:i'),
-                'updated_by' => $bookingDTO->updated_by,
-                // Include name, phone, email if provided in DTO
-                'name' => $bookingDTO->name ?? $booking->name,
-                'phone' => $bookingDTO->phone ?? $booking->phone,
-                'email' => $bookingDTO->email ?? $booking->email,
-                // Update status if provided
-                'status' => $bookingDTO->status ?? $booking->status,
-            ];
+                $date = $bookingDTO->date ?? $booking->date->format('Y-m-d');
+                $fromHour = $bookingDTO->from_hour ?? $booking->from_hour;
+                $from = Carbon::parse("$date $fromHour");
+                $to = $from->copy()->addMinutes($selection['duration']);
 
-            // حفظ الحالة القديمة قبل التحديث
-            $oldStatus = $booking->status;
-
-            $booking->update($updateData);
-
-            // إرسال إشعارات حسب تغيير الحالة
-            if ($oldStatus != $updateData['status']) {
-                $this->sendBookingStatusChangeNotification($booking, $oldStatus, $updateData['status']);
-            }
-
-            // Update services if changed
-            if (!empty($bookingDTO->services)) {
-                // Delete existing service associations
-                $this->bookingServiceRepository->delete($booking->id);
-
-                // Create new service associations
-                foreach ($services as $service) {
-                    // First, create the booking service record directly
-                    // Note: The booking_service table doesn't have a duration column
-                    $bookingService = new BookingService();
-                    $bookingService->booking_id = $booking->id;
-                    $bookingService->service_id = $service->id;
-                    $bookingService->employee_id = $employeeId;
-                    $bookingService->save();
+                if (in_array($nextStatus, [BookingStatusEnum::PENDING->value, BookingStatusEnum::CONFIRMED->value], true)
+                    && ! $this->availabilityService->isDurationAvailable(
+                        $employeeId,
+                        $date,
+                        $selection['duration'],
+                        $from->format('H:i'),
+                        $booking->id
+                    )) {
+                    throw new \DomainException('الموعد غير متاح أو يتعارض مع إجازة الحلاق.', 409);
                 }
-            }
 
-            DB::commit();
+                $oldStatus = (int) $booking->status;
+                $booking->update([
+                    'date' => $date,
+                    'from_hour' => $from->format('H:i'),
+                    'to_hour' => $to->format('H:i'),
+                    'updated_by' => $this->employee->id ?? null,
+                    'name' => $bookingDTO->name ?? $booking->name,
+                    'phone' => $bookingDTO->phone ?? $booking->phone,
+                    'email' => $bookingDTO->email ?? $booking->email,
+                    'status' => $nextStatus,
+                    'expires_at' => $nextStatus === BookingStatusEnum::PENDING->value
+                        ? ($booking->expires_at ?? now()->addMinutes(15))
+                        : null,
+                ]);
 
-            // مسح Cache بعد تحديث الحجز
-            $this->cacheService->clearBookingCache(); // مسح جميع الـ cache
+                if ($selectionChanged) {
+                    $this->persistSelection($booking->id, $employeeId, $selection);
+                } elseif ((int) $booking->services->first()?->pivot->employee_id !== $employeeId) {
+                    BookingService::query()->where('booking_id', $booking->id)->update(['employee_id' => $employeeId]);
+                }
 
-            // مسح إحصائيات التخزين المؤقت إذا تغيرت حالة الحجز
-            if ($oldStatus != $updateData['status']) {
-                $this->statisticsCacheService->clearAllStatisticsCache();
-            }
+                if ($oldStatus !== $nextStatus) {
+                    $this->sendBookingStatusChangeNotification($booking, $oldStatus, $nextStatus);
+                }
 
-            // Load relationships with the correct method names
-            $booking->load(['services', 'createdBy', 'updatedBy']);
-            $resource = $this->handleBookingDetailResource($booking, $view);
+                return $booking;
+            });
 
-            return DataSuccess(true, 'Booking updated successfully', $resource);
+            $this->cacheService->clearBookingCache();
+            $this->statisticsCacheService->clearAllStatisticsCache();
+            $booking->load(['services', 'packages', 'createdBy', 'updatedBy']);
+
+            return DataSuccess(true, 'Booking updated successfully', $this->handleBookingDetailResource($booking, $view));
         } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error updating booking: ' . $e->getMessage());
-            return DataFailed(false, $e->getMessage());
+            Log::error('Error updating booking: '.$e->getMessage());
+
+            return DataFailed(false, $e->getMessage(), $e->getCode() === 409 ? 409 : 400);
         }
     }
 
@@ -459,26 +309,111 @@ class BookingUseCase
     public function deleteBooking(BookingFilterDTO $bookingFilterDto): DataStatus
     {
         try {
-            $booking = $this->bookingRepository->getById($bookingFilterDto->booking_id);
-            if (!$booking) {
-                return DataFailed(false, 'Booking not found', 404);
-            }
+            $booking = DB::transaction(function () use ($bookingFilterDto) {
+                $booking = $this->bookingRepository->getModel()->newQuery()
+                    ->with('invoice')
+                    ->lockForUpdate()
+                    ->find($bookingFilterDto->booking_id);
+                if (! $booking) {
+                    throw ValidationException::withMessages(['booking_id' => 'الحجز غير موجود.']);
+                }
+                if ($booking->invoice) {
+                    throw ValidationException::withMessages(['booking_id' => 'لا يمكن إلغاء حجز مرتبط بفاتورة.']);
+                }
+                if ((int) $booking->status === BookingStatusEnum::FINISHED->value) {
+                    throw ValidationException::withMessages(['booking_id' => 'لا يمكن إلغاء حجز مكتمل.']);
+                }
 
-            // إرسال إشعار قبل الحذف
-            $this->sendBookingDeletedNotification($booking);
+                $oldStatus = (int) $booking->status;
+                $booking->update([
+                    'status' => BookingStatusEnum::CANCELLED->value,
+                    'expires_at' => null,
+                    'updated_by' => $this->employee->id ?? null,
+                ]);
+                if ($oldStatus !== BookingStatusEnum::CANCELLED->value) {
+                    $this->sendBookingStatusChangeNotification(
+                        $booking,
+                        $oldStatus,
+                        BookingStatusEnum::CANCELLED->value
+                    );
+                }
 
-            // delete pivot entries first (safety)
-            $this->bookingServiceRepository->delete($booking->id);
+                return $booking;
+            });
 
-            $this->bookingRepository->delete($booking->id);
-
-            // مسح Cache بعد حذف الحجز
             $this->cacheService->clearBookingCache();
+            $this->statisticsCacheService->clearAllStatisticsCache();
 
-            return DataSuccess(true, 'Booking deleted successfully');
+            return DataSuccess(true, 'Booking cancelled successfully', $booking);
         } catch (\Exception $e) {
             Log::error('Error deleting booking: ' . $e->getMessage());
-            return DataFailed(false, $e->getMessage());
+            return DataFailed(false, $e->getMessage(), 400);
+        }
+    }
+
+    private function lockBookableBarber(int $employeeId): AdminEmployee
+    {
+        $barber = AdminEmployee::query()
+            ->whereKey($employeeId)
+            ->where('employee_type', 'barber')
+            ->where('status', 'active')
+            ->where('is_active', true)
+            ->where('is_blocked', false)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $barber) {
+            throw ValidationException::withMessages(['employee_id' => 'الحلاق المحدد غير متاح للحجز.']);
+        }
+
+        return $barber;
+    }
+
+    private function persistSelection(int $bookingId, int $employeeId, array $selection): void
+    {
+        BookingService::query()->where('booking_id', $bookingId)->delete();
+        DB::table('booking_package')->where('booking_id', $bookingId)->delete();
+
+        foreach ($selection['service_rows'] as $row) {
+            BookingService::query()->create([
+                'booking_id' => $bookingId,
+                'employee_id' => $employeeId,
+                ...$row,
+            ]);
+        }
+
+        foreach ($selection['packages'] as $package) {
+            DB::table('booking_package')->insert([
+                'booking_id' => $bookingId,
+                'package_id' => $package->id,
+                'name_snapshot' => $package->name,
+                'price_snapshot' => $package->price,
+                'duration_snapshot' => $package->duration,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    }
+
+    private function assertStatusTransition(int $currentStatus, int $nextStatus): void
+    {
+        $allowed = [
+            BookingStatusEnum::PENDING->value => [
+                BookingStatusEnum::PENDING->value,
+                BookingStatusEnum::CONFIRMED->value,
+                BookingStatusEnum::CANCELLED->value,
+            ],
+            BookingStatusEnum::CONFIRMED->value => [
+                BookingStatusEnum::CONFIRMED->value,
+                BookingStatusEnum::FINISHED->value,
+                BookingStatusEnum::CANCELLED->value,
+            ],
+            BookingStatusEnum::CANCELLED->value => [BookingStatusEnum::CANCELLED->value],
+            BookingStatusEnum::FINISHED->value => [BookingStatusEnum::FINISHED->value],
+        ];
+
+        if (! in_array($nextStatus, $allowed[$currentStatus] ?? [], true)) {
+            throw ValidationException::withMessages(['status' => 'لا يمكن تغيير الحجز إلى هذه الحالة.']);
         }
     }
 
@@ -526,8 +461,8 @@ class BookingUseCase
     private function sendBookingStatusChangeNotification($booking, $oldStatus, $newStatus)
     {
         try {
-            $booking->load(['services', 'employee']);
-            $employeeId = $booking->employee ? $booking->employee->id : null;
+            $booking->load('services');
+            $employeeId = $booking->services->first()?->pivot->employee_id;
             $serviceNames = $booking->services->pluck('name')->join(', ');
 
             // تحديد نوع الإشعار حسب الحالة الجديدة
@@ -596,39 +531,6 @@ class BookingUseCase
             );
         } catch (\Exception $e) {
             Log::error('Failed to send direct notification: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * إرسال إشعار حذف الحجز
-     */
-    private function sendBookingDeletedNotification($booking)
-    {
-        try {
-            $booking->load(['services', 'employee']);
-            $employeeId = $booking->employee ? $booking->employee->id : null;
-            $serviceNames = $booking->services->pluck('name')->join(', ');
-
-            if ($employeeId) {
-                $message = "تم حذف حجز العميل {$booking->name} لخدمة {$serviceNames}";
-
-                $this->sendDirectNotificationToEmployee(
-                    $employeeId,
-                    "حذف الحجز",
-                    $message,
-                    [
-                        'booking_id' => $booking->id,
-                        'customer_name' => $booking->name,
-                        'service_names' => $serviceNames,
-                        'date' => $booking->date?->format('Y-m-d'),
-                        'time' => $booking->from_hour,
-                        'action' => 'deleted'
-                    ]
-                );
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Failed to send booking deleted notification: ' . $e->getMessage());
         }
     }
 

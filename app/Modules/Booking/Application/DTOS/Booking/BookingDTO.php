@@ -14,10 +14,12 @@ class BookingDTO extends BaseDTOAbstract
     public $from_hour;
     public $to_hour;
     public $status;
+    public $expires_at;
     public $created_by;
     public $updated_by;
     public $service_id;
     public $services;
+    public $packages;
     public $employee_id;
 
 
