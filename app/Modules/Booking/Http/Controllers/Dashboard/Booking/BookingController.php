@@ -284,6 +284,9 @@ class BookingController extends Controller
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
+        if ($request->user()->employee_type === 'barber') {
+            $validated['employee_id'] = $request->user()->id;
+        }
 
         $timeOffs = BarberTimeOff::query()
             ->with('barber:id,first_name,last_name')

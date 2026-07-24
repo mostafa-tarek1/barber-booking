@@ -46,6 +46,10 @@ class InvoiceController extends Controller
 
         $invoices = Invoice::query()
             ->with(['cashier:id,first_name,last_name', 'barber:id,first_name,last_name'])
+            ->when(
+                $request->user()->employee_type === 'barber',
+                fn ($query) => $query->where('barber_id', $request->user()->id)
+            )
             ->when($validated['word'] ?? null, function ($query, $word) {
                 $query->where(fn ($search) => $search
                     ->where('invoice_number', 'like', "%$word%")
@@ -75,6 +79,13 @@ class InvoiceController extends Controller
             ])
             ->findOrFail($validated['invoice_id']);
 
+        abort_if(
+            $request->user()->employee_type === 'barber'
+                && (int) $invoice->barber_id !== (int) $request->user()->id,
+            403,
+            'ليس لديك صلاحية لعرض هذه الفاتورة.'
+        );
+
         return response()->json(['status' => 200, 'message' => 'Invoice fetched successfully', 'data' => $invoice]);
     }
 
@@ -85,6 +96,9 @@ class InvoiceController extends Controller
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'barber_id' => ['nullable', 'integer', 'exists:employees,id'],
         ]);
+        if ($request->user()->employee_type === 'barber') {
+            $validated['barber_id'] = $request->user()->id;
+        }
 
         $report = Employee::query()
             ->where('employee_type', 'barber')

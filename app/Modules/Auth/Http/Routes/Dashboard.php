@@ -15,11 +15,15 @@ Route::prefix('dashboard')->group(function () {
 Route::prefix('dashboard')->middleware('baseAuthMiddleware:employee')->group(function () {
     Route::controller(EmployeeController::class)->group(function () {
         Route::post('logout', 'logout')->name('logout');
-        Route::post('fetch_employees', 'fetchEmployees')->name('fetch_employees');
-        Route::post('fetch_employee_details', 'fetchEmployeeDetails')->name('fetch_employee_details');
-        Route::post('create_employee', 'createEmployee')->name('create_employee');
-        Route::post('update_employee', 'updateEmployee')->name('update_employee');
-        Route::post('delete_employee', 'deleteEmployee')->name('delete_employee');
+        Route::post('fetch_employees', 'fetchEmployees')
+            ->middleware('employeeRole:admin,super_admin,employee')
+            ->name('fetch_employees');
+        Route::middleware('employeeRole:admin,super_admin')->group(function () {
+            Route::post('fetch_employee_details', 'fetchEmployeeDetails')->name('fetch_employee_details');
+            Route::post('create_employee', 'createEmployee')->name('create_employee');
+            Route::post('update_employee', 'updateEmployee')->name('update_employee');
+            Route::post('delete_employee', 'deleteEmployee')->name('delete_employee');
+        });
     });
     Route::controller(AttendanceController::class)->group(function () {
         Route::post('attendance_status', 'status');
@@ -28,7 +32,7 @@ Route::prefix('dashboard')->middleware('baseAuthMiddleware:employee')->group(fun
         Route::post('update_attendance_settings', 'updateSettings');
         Route::post('fetch_attendance_report', 'report');
     });
-    Route::controller(UserController::class)->group(function () {
+    Route::controller(UserController::class)->middleware('employeeRole:admin,super_admin')->group(function () {
         Route::post('create_user', 'createUser');
         Route::post('delete_user', 'deleteUser');
         Route::post('fetch_users', 'fetchUsers');

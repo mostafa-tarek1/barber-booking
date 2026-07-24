@@ -8,8 +8,10 @@ Route::prefix('dashboard')->group(function () {
     Route::middleware('baseAuthMiddleware:employee')->group(function () {
         Route::post('fetch_services', [ServiceController::class, 'fetchServices']);
         Route::post('fetch_service_details', [ServiceController::class, 'fetchServiceDetails']);
-        Route::post('create_service', [ServiceController::class, 'createService']);
-        Route::post('update_service', [ServiceController::class, 'updateService']);
-        Route::post('delete_service', [ServiceController::class, 'deleteService']);
+        Route::middleware('employeeRole:admin,super_admin')->group(function () {
+            Route::post('create_service', [ServiceController::class, 'createService']);
+            Route::post('update_service', [ServiceController::class, 'updateService']);
+            Route::post('delete_service', [ServiceController::class, 'deleteService']);
+        });
     });
 });

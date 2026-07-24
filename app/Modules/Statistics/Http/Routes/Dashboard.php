@@ -34,7 +34,7 @@ use App\Modules\Statistics\Http\Controllers\Dashboard\Statistics\StatisticsContr
 
 
 Route::prefix('dashboard')->group(function () {
-    Route::middleware('baseAuthMiddleware:employee')->group(function () {
+    Route::middleware(['baseAuthMiddleware:employee', 'employeeRole:admin,super_admin'])->group(function () {
         //        Faq
         Route::post('fetch_faqs', [FaqController::class, 'fetchFaqs'])->name('fetch_faqs');
         Route::post('fetch_faq_details', [FaqController::class, 'fetchFaqDetails']);
@@ -78,10 +78,11 @@ Route::prefix('dashboard')->group(function () {
         });
     });
 
-    Route::controller(ContactUsController::class)->group(function () {
-        Route::post('fetch_contact_us', 'fetchContactUs');
-        Route::post('fetch_contact_us_details', 'fetchContactUsDetails');
-        Route::post('delete_contact_us', 'deleteContactUs');
-    });
+    Route::controller(ContactUsController::class)
+        ->middleware(['baseAuthMiddleware:employee', 'employeeRole:admin,super_admin'])
+        ->group(function () {
+            Route::post('fetch_contact_us', 'fetchContactUs');
+            Route::post('fetch_contact_us_details', 'fetchContactUsDetails');
+            Route::post('delete_contact_us', 'deleteContactUs');
+        });
 });
-

@@ -12,6 +12,7 @@ class EmployeeFilterDTO extends BaseDTOAbstract
     public $limit;
     public $paginate;
     public $employee_type;
+    public $status;
     public function __construct(array $data = [])
     {
         parent::__construct($data);
@@ -20,7 +21,6 @@ class EmployeeFilterDTO extends BaseDTOAbstract
     public function excludedAttributes(): array
     {
         return [
-            'employee_type',
             'word'
         ];
     }

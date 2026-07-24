@@ -67,15 +67,22 @@ class BookingUseCase
 
             // إنشاء cache key بناءً على الفلاتر
             $filters = $bookingFilterDto->toArray();
-            $cacheKey = $this->cacheService->generateListCacheKey($filters);
+            $barberId = $this->employee?->employee_type === 'barber' ? $this->employee->id : null;
+            $cacheKey = $this->cacheService->generateListCacheKey([
+                ...$filters,
+                'viewer_barber_id' => $barberId,
+            ]);
 
-            $bookings = $this->cacheService->getCachedBookings($cacheKey, function () use ($bookingFilterDto) {
+            $bookings = $this->cacheService->getCachedBookings($cacheKey, function () use ($bookingFilterDto, $barberId) {
                 return $this->bookingRepository->filter(
                     $bookingFilterDto,
                     operator: 'like',
                     translatableFields: [],
                     paginate: $bookingFilterDto->paginate,
                     limit: $bookingFilterDto->limit,
+                    whereHasRelations: $barberId
+                        ? ['services' => ['booking_service.employee_id' => $barberId]]
+                        : [],
                     withRelations: ['services', 'createdBy', 'updatedBy'] // Eager loading للعلاقات
                 );
             });
@@ -105,6 +112,10 @@ class BookingUseCase
                 return DataFailed(false, 'Booking not found');
             }
 
+            if (! $this->canViewBooking($booking)) {
+                return DataFailed(false, 'ليس لديك صلاحية لعرض هذا الحجز.', 403);
+            }
+
             // Load the relationships with the pivot data
             $booking->load([
                 'services' => function ($query) {
@@ -126,6 +137,17 @@ class BookingUseCase
             Log::error('Error fetching booking detail: ' . $e->getMessage());
             return DataFailed(false, $e->getMessage());
         }
+    }
+
+    private function canViewBooking($booking): bool
+    {
+        if ($this->employee?->employee_type !== 'barber') {
+            return true;
+        }
+
+        return $booking->services()
+            ->wherePivot('employee_id', $this->employee->id)
+            ->exists();
     }
 
     /**
