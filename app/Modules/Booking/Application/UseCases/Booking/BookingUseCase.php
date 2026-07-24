@@ -166,7 +166,9 @@ class BookingUseCase
             $from = Carbon::parse("{$bookingDTO->date} {$bookingDTO->from_hour}");
             $to = (clone $from)->addMinutes($totalDuration);
             $bookingDTO->to_hour = $to->format('H:i');
-            $bookingDTO->status = BookingStatusEnum::PENDING->value;
+            $bookingDTO->status = $view === ViewTypeEnum::DASHBOARD->value
+                ? BookingStatusEnum::CONFIRMED->value
+                : BookingStatusEnum::PENDING->value;
 
             $isAvailable = $this->availabilityService->isAvailable(
                 $bookingDTO->employee_id,
