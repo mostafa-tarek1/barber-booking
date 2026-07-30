@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Booking\Application\Services\InvoiceService;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
+use App\Support\BusinessDay;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -57,8 +58,16 @@ class InvoiceController extends Controller
                     ->orWhere('customer_name', 'like', "%$word%")
                     ->orWhere('customer_phone', 'like', "%$word%"));
             })
-            ->when($validated['date_from'] ?? null, fn ($query, $date) => $query->whereDate('paid_at', '>=', $date))
-            ->when($validated['date_to'] ?? null, fn ($query, $date) => $query->whereDate('paid_at', '<=', $date))
+            ->when($validated['date_from'] ?? null, function ($query, $date) {
+                [$start] = BusinessDay::range($date);
+
+                $query->where('paid_at', '>=', $start);
+            })
+            ->when($validated['date_to'] ?? null, function ($query, $date) {
+                [, $end] = BusinessDay::range($date);
+
+                $query->where('paid_at', '<', $end);
+            })
             ->latest('paid_at')
             ->paginate($validated['limit'] ?? 20);
 
@@ -108,10 +117,12 @@ class InvoiceController extends Controller
                 $join->on('invoices.barber_id', '=', 'employees.id')
                     ->where('invoices.status', '=', 'paid');
                 if ($validated['date_from'] ?? null) {
-                    $join->whereDate('invoices.paid_at', '>=', $validated['date_from']);
+                    [$start] = BusinessDay::range($validated['date_from']);
+                    $join->where('invoices.paid_at', '>=', $start);
                 }
                 if ($validated['date_to'] ?? null) {
-                    $join->whereDate('invoices.paid_at', '<=', $validated['date_to']);
+                    [, $end] = BusinessDay::range($validated['date_to']);
+                    $join->where('invoices.paid_at', '<', $end);
                 }
             })
             ->select([

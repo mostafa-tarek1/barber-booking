@@ -8,6 +8,7 @@ use App\Modules\Base\Application\Response\DataStatus;
 use App\Modules\Base\Application\Response\DataSuccess;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
+use App\Support\BusinessDay;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -17,14 +18,15 @@ class StatisticsUseCase
     {
         try {
             $today = now('Africa/Cairo')->toDateString();
-            $todayRange = $this->cairoDayRange($today);
+            $salesDate = BusinessDay::currentDate();
+            $todayRange = BusinessDay::range($salesDate);
 
             return new DataSuccess([
                 'total_bookings' => Booking::query()->count(),
                 'total_revenue' => (float) Invoice::query()->where('status', 'paid')->sum('total'),
                 'total_employees' => Employee::query()->where('employee_type', 'barber')->where('status', 'active')->count(),
                 'today_bookings' => Booking::query()->whereDate('date', $today)->count(),
-                'today_revenue' => (float) Invoice::query()->where('status', 'paid')->whereBetween('paid_at', $todayRange)->sum('total'),
+                'today_revenue' => $this->paidRevenueBetween(...$todayRange),
                 'total_paid_invoices' => Invoice::query()->where('status', 'paid')->count(),
             ], message: 'تم جلب الإحصائيات بنجاح');
         } catch (\Throwable $exception) {
@@ -53,7 +55,7 @@ class StatisticsUseCase
                     'cancelled' => (int) ($bookingCounts->cancelled ?? 0),
                     'finished' => (int) ($bookingCounts->finished ?? 0),
                 ],
-                'revenue' => $this->paidRevenueBetween(...$this->cairoDayRange($date)),
+                'revenue' => $this->paidRevenueBetween(...BusinessDay::range($date)),
             ], message: 'تم جلب النشاط اليومي بنجاح');
         } catch (\Throwable $exception) {
             report($exception);
@@ -67,11 +69,13 @@ class StatisticsUseCase
         try {
             $monthStart = Carbon::createFromFormat('Y-m-d', "$month-01", 'Africa/Cairo')->startOfMonth();
             $monthEnd = $monthStart->copy()->endOfMonth();
+            [$revenueStart] = BusinessDay::range($monthStart->toDateString());
+            [, $revenueEnd] = BusinessDay::range($monthEnd->toDateString());
 
             return new DataSuccess([
                 'month' => $month,
                 'daily_bookings' => $this->monthlyBookingRows($monthStart, $monthEnd),
-                'total_revenue' => $this->paidRevenueBetween($monthStart, $monthEnd),
+                'total_revenue' => $this->paidRevenueBetween($revenueStart, $revenueEnd),
                 'recent_daily_activity' => $this->recentDailyActivity(),
                 'monthly_revenue' => $this->lastSixMonthsRevenue(),
             ], message: 'تم جلب النشاط الشهري بنجاح');
@@ -163,14 +167,16 @@ class StatisticsUseCase
 
     private function recentDailyActivity(): array
     {
-        $end = now('Africa/Cairo')->startOfDay();
+        $end = Carbon::parse(BusinessDay::currentDate(), 'Africa/Cairo')->startOfDay();
         $start = $end->copy()->subDays(6);
         $bookings = Booking::query()
             ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
             ->selectRaw('DATE(date) as date, COUNT(*) as total')
             ->groupByRaw('DATE(date)')
             ->pluck('total', 'date');
-        $revenues = $this->revenueGroupedByDate($start, $end->copy()->endOfDay());
+        [$revenueStart] = BusinessDay::range($start->toDateString());
+        [, $revenueEnd] = BusinessDay::range($end->toDateString());
+        $revenues = $this->revenueGroupedByDate($revenueStart, $revenueEnd);
 
         return collect(range(0, 6))->map(function (int $dayOffset) use ($start, $bookings, $revenues) {
             $date = $start->copy()->addDays($dayOffset)->toDateString();
@@ -185,13 +191,17 @@ class StatisticsUseCase
 
     private function lastSixMonthsRevenue(): array
     {
-        $firstMonth = now('Africa/Cairo')->startOfMonth()->subMonths(5);
-        $lastMonth = now('Africa/Cairo')->endOfMonth();
+        $currentBusinessDate = Carbon::parse(BusinessDay::currentDate(), 'Africa/Cairo');
+        $firstMonth = $currentBusinessDate->copy()->startOfMonth()->subMonths(5);
+        $lastMonth = $currentBusinessDate->copy()->endOfMonth();
+        [$revenueStart] = BusinessDay::range($firstMonth->toDateString());
+        [, $revenueEnd] = BusinessDay::range($lastMonth->toDateString());
         $revenues = Invoice::query()
             ->where('status', 'paid')
-            ->whereBetween('paid_at', [$firstMonth, $lastMonth])
+            ->where('paid_at', '>=', $revenueStart)
+            ->where('paid_at', '<', $revenueEnd)
             ->get(['paid_at', 'total'])
-            ->groupBy(fn (Invoice $invoice) => $invoice->paid_at->setTimezone('Africa/Cairo')->format('Y-m'))
+            ->groupBy(fn (Invoice $invoice) => substr(BusinessDay::dateFor($invoice->paid_at), 0, 7))
             ->map(fn ($invoices) => $invoices->sum('total'));
 
         return collect(range(0, 5))->map(function (int $monthOffset) use ($firstMonth, $revenues) {
@@ -205,9 +215,10 @@ class StatisticsUseCase
     {
         return Invoice::query()
             ->where('status', 'paid')
-            ->whereBetween('paid_at', [$start, $end])
+            ->where('paid_at', '>=', $start)
+            ->where('paid_at', '<', $end)
             ->get(['paid_at', 'total'])
-            ->groupBy(fn (Invoice $invoice) => $invoice->paid_at->setTimezone('Africa/Cairo')->toDateString())
+            ->groupBy(fn (Invoice $invoice) => BusinessDay::dateFor($invoice->paid_at))
             ->map(fn ($invoices) => $invoices->sum('total'));
     }
 
@@ -215,14 +226,8 @@ class StatisticsUseCase
     {
         return (float) Invoice::query()
             ->where('status', 'paid')
-            ->whereBetween('paid_at', [$start, $end])
+            ->where('paid_at', '>=', $start)
+            ->where('paid_at', '<', $end)
             ->sum('total');
-    }
-
-    private function cairoDayRange(string $date): array
-    {
-        $day = Carbon::parse($date, 'Africa/Cairo');
-
-        return [$day->copy()->startOfDay(), $day->copy()->endOfDay()];
     }
 }

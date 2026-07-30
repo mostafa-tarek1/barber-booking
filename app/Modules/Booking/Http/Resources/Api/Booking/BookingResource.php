@@ -3,7 +3,6 @@
 namespace App\Modules\Booking\Http\Resources\Api\Booking;
 
 use App\Modules\Auth\Http\Resources\Admin\AdminResource;
-use App\Modules\Rooms\Http\Resources\Api\RoomResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -26,6 +25,7 @@ class BookingResource extends JsonResource
             'to_hour' => $this->to_hour,
             'time_slot' => "{$this->from_hour} - {$this->to_hour}",
             'status' => $this->status,
+            'notes' => $this->notes,
             'services' => $this->whenLoaded('services', fn () => $this->services->map(fn ($service) => [
                 'id' => $service->id,
                 'package_id' => $service->pivot->package_id,

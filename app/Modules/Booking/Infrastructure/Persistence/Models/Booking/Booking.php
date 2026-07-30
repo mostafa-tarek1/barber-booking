@@ -3,24 +3,25 @@
 namespace App\Modules\Booking\Infrastructure\Persistence\Models\Booking;
 
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
-use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
-use Illuminate\Database\Eloquent\Model;
+use App\Modules\Service\Infrastructure\Persistence\Models\Package\Package;
+use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
 use Astrotomic\Translatable\Contracts\Translatable as TranslatableContract;
 use Astrotomic\Translatable\Translatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Modules\Service\Infrastructure\Persistence\Models\Package\Package;
 
 class Booking extends Model implements TranslatableContract
 {
-    use Translatable;
     use HasFactory;
     use SoftDeletes;
+    use Translatable;
 
-    public $translatedAttributes = ['notes', 'locale'];
+    public $translatedAttributes = ['notes'];
 
     protected $table = 'bookings';
+
     protected $fillable = [
         'name',
         'phone',
@@ -31,7 +32,7 @@ class Booking extends Model implements TranslatableContract
         'status',
         'expires_at',
         'created_by',
-        'updated_by'
+        'updated_by',
     ];
 
     protected $casts = [
