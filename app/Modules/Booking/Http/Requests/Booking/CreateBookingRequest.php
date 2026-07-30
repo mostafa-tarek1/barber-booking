@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Modules\Booking\Http\Requests\Booking;
 
 use App\Modules\Base\Domain\Request\BaseRequestAbstract;
@@ -30,6 +31,7 @@ class CreateBookingRequest extends BaseRequestAbstract
             'packages' => ['nullable', 'array', 'required_without:services'],
             'packages.*' => ['integer', 'distinct', 'exists:packages,id'],
             'employee_id' => ['required', 'exists:employees,id'],
+            'notes' => ['nullable', 'string', 'max:1000'],
         ];
     }
 }

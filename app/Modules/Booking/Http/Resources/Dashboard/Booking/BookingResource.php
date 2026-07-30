@@ -2,11 +2,6 @@
 
 namespace App\Modules\Booking\Http\Resources\Dashboard\Booking;
 
-use App\Modules\Auth\Http\Resources\Admin\AdminResource;
-use App\Modules\Rooms\Http\Resources\Dashboard\Room\GeneralRoomResource;
-use App\Modules\Rooms\Http\Resources\Dashboard\Room\RoomResource;
-use App\Modules\Rooms\Http\Resources\RoomAdditional\GeneralRoomAdditionalResource;
-use App\Modules\Service\Http\Resources\Api\ServiceResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -30,6 +25,7 @@ class BookingResource extends JsonResource
             'time_slot' => "{$this->from_hour} - {$this->to_hour}",
             'status' => $this->status,
             'status_text' => $this->getStatusText(),
+            'notes' => $this->notes,
             'created_at' => $this->created_at?->toDateTimeString(),
             'created_at_formatted' => $this->created_at?->format('d/m/Y H:i'),
 
@@ -37,13 +33,13 @@ class BookingResource extends JsonResource
             'created_by' => $this->whenLoaded('createdBy', function () {
                 return [
                     'id' => $this->createdBy->id,
-                    'name' => trim($this->createdBy->first_name . ' ' . $this->createdBy->last_name)
+                    'name' => trim($this->createdBy->first_name.' '.$this->createdBy->last_name),
                 ];
             }),
             'updated_by' => $this->whenLoaded('updatedBy', function () {
                 return [
                     'id' => $this->updatedBy->id,
-                    'name' => trim($this->updatedBy->first_name . ' ' . $this->updatedBy->last_name)
+                    'name' => trim($this->updatedBy->first_name.' '.$this->updatedBy->last_name),
                 ];
             }),
             'services' => $this->whenLoaded('services', function () {
@@ -68,7 +64,7 @@ class BookingResource extends JsonResource
             'employee' => $this->whenLoaded('employee', function () {
                 return [
                     'id' => $this->employee->id,
-                    'name' => trim($this->employee->first_name . ' ' . $this->employee->last_name)
+                    'name' => trim($this->employee->first_name.' '.$this->employee->last_name),
                 ];
             }),
 
@@ -84,8 +80,7 @@ class BookingResource extends JsonResource
                     : 0);
             }),
             'total_duration' => $this->whenLoaded('services', function () {
-                return $this->services->sum(fn ($service) =>
-                    ($service->pivot->duration_snapshot ?? $service->duration)
+                return $this->services->sum(fn ($service) => ($service->pivot->duration_snapshot ?? $service->duration)
                     * ($service->pivot->quantity ?? 1)
                 );
             }),
