@@ -17,7 +17,7 @@ class StatisticsUseCase
     {
         try {
             $today = now('Africa/Cairo')->toDateString();
-            $todayRange = $this->cairoDayUtcRange($today);
+            $todayRange = $this->cairoDayRange($today);
 
             return new DataSuccess([
                 'total_bookings' => Booking::query()->count(),
@@ -53,7 +53,7 @@ class StatisticsUseCase
                     'cancelled' => (int) ($bookingCounts->cancelled ?? 0),
                     'finished' => (int) ($bookingCounts->finished ?? 0),
                 ],
-                'revenue' => $this->paidRevenueBetween(...$this->cairoDayUtcRange($date)),
+                'revenue' => $this->paidRevenueBetween(...$this->cairoDayRange($date)),
             ], message: 'تم جلب النشاط اليومي بنجاح');
         } catch (\Throwable $exception) {
             report($exception);
@@ -71,7 +71,7 @@ class StatisticsUseCase
             return new DataSuccess([
                 'month' => $month,
                 'daily_bookings' => $this->monthlyBookingRows($monthStart, $monthEnd),
-                'total_revenue' => $this->paidRevenueBetween($monthStart->copy()->utc(), $monthEnd->copy()->utc()),
+                'total_revenue' => $this->paidRevenueBetween($monthStart, $monthEnd),
                 'recent_daily_activity' => $this->recentDailyActivity(),
                 'monthly_revenue' => $this->lastSixMonthsRevenue(),
             ], message: 'تم جلب النشاط الشهري بنجاح');
@@ -170,7 +170,7 @@ class StatisticsUseCase
             ->selectRaw('DATE(date) as date, COUNT(*) as total')
             ->groupByRaw('DATE(date)')
             ->pluck('total', 'date');
-        $revenues = $this->revenueGroupedByDate($start->copy()->utc(), $end->copy()->endOfDay()->utc());
+        $revenues = $this->revenueGroupedByDate($start, $end->copy()->endOfDay());
 
         return collect(range(0, 6))->map(function (int $dayOffset) use ($start, $bookings, $revenues) {
             $date = $start->copy()->addDays($dayOffset)->toDateString();
@@ -189,7 +189,7 @@ class StatisticsUseCase
         $lastMonth = now('Africa/Cairo')->endOfMonth();
         $revenues = Invoice::query()
             ->where('status', 'paid')
-            ->whereBetween('paid_at', [$firstMonth->copy()->utc(), $lastMonth->copy()->utc()])
+            ->whereBetween('paid_at', [$firstMonth, $lastMonth])
             ->get(['paid_at', 'total'])
             ->groupBy(fn (Invoice $invoice) => $invoice->paid_at->setTimezone('Africa/Cairo')->format('Y-m'))
             ->map(fn ($invoices) => $invoices->sum('total'));
@@ -219,10 +219,10 @@ class StatisticsUseCase
             ->sum('total');
     }
 
-    private function cairoDayUtcRange(string $date): array
+    private function cairoDayRange(string $date): array
     {
         $day = Carbon::parse($date, 'Africa/Cairo');
 
-        return [$day->copy()->startOfDay()->utc(), $day->copy()->endOfDay()->utc()];
+        return [$day->copy()->startOfDay(), $day->copy()->endOfDay()];
     }
 }
