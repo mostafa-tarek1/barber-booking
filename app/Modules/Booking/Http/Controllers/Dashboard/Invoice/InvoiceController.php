@@ -28,7 +28,9 @@ class InvoiceController extends Controller
             'items.*.unit_price' => ['required_without_all:items.*.service_id,items.*.package_id', 'nullable', 'numeric', 'min:0'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:99'],
             'discount' => ['nullable', 'numeric', 'min:0'],
-            'payment_method' => ['required', Rule::in(['cash', 'card', 'wallet'])],
+            'payments' => ['required', 'array', 'min:1', 'max:3'],
+            'payments.*.payment_method' => ['required', 'string', 'distinct', Rule::in(['cash', 'card', 'wallet'])],
+            'payments.*.amount' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -47,7 +49,7 @@ class InvoiceController extends Controller
         ]);
 
         $invoices = Invoice::query()
-            ->with(['cashier:id,first_name,last_name', 'barber:id,first_name,last_name'])
+            ->with(['payments', 'cashier:id,first_name,last_name', 'barber:id,first_name,last_name'])
             ->when(
                 $request->user()->employee_type === 'barber',
                 fn ($query) => $query->where('barber_id', $request->user()->id)
@@ -83,6 +85,7 @@ class InvoiceController extends Controller
         $invoice = Invoice::query()
             ->with([
                 'items',
+                'payments',
                 'booking:id,date,from_hour,to_hour',
                 'cashier:id,first_name,last_name',
                 'barber:id,first_name,last_name',

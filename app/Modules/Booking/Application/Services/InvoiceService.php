@@ -27,14 +27,24 @@ class InvoiceService
                 throw ValidationException::withMessages(['items' => 'يجب إضافة بند واحد على الأقل للفاتورة.']);
             }
             $totals = $this->invoiceTotals($items, (float) ($invoiceInput['discount'] ?? 0));
-            $invoice = Invoice::create($this->invoiceAttributes($invoiceInput, $booking, $barber->id, $cashierId, $totals));
+            $paymentRows = $this->paymentRows($invoiceInput['payments'], $totals['total_cents']);
+            $invoice = Invoice::create($this->invoiceAttributes(
+                $invoiceInput,
+                $booking,
+                $barber->id,
+                $cashierId,
+                $totals,
+                $paymentRows
+            ));
 
             $invoice->update(['invoice_number' => 'KR-'.now()->format('Ymd').'-'.str_pad((string) $invoice->id, 6, '0', STR_PAD_LEFT)]);
             $invoice->items()->createMany($this->invoiceItemRows($items));
+            $invoice->payments()->createMany($paymentRows);
             $booking?->update(['status' => BookingStatusEnum::FINISHED->value, 'updated_by' => $cashierId]);
 
             return $invoice->load([
                 'items',
+                'payments',
                 'booking:id,date,from_hour,to_hour',
                 'cashier:id,first_name,last_name',
                 'barber:id,first_name,last_name',
@@ -50,10 +60,13 @@ class InvoiceService
             throw ValidationException::withMessages(['discount' => 'Discount cannot exceed subtotal.']);
         }
 
+        $totalCents = $subtotalCents - $discountCents;
+
         return [
             'subtotal' => $subtotalCents / 100,
             'discount' => $discountCents / 100,
-            'total' => ($subtotalCents - $discountCents) / 100,
+            'total' => $totalCents / 100,
+            'total_cents' => $totalCents,
         ];
     }
 
@@ -62,7 +75,8 @@ class InvoiceService
         ?Booking $booking,
         int $barberId,
         int $cashierId,
-        array $totals
+        array $totals,
+        array $paymentRows
     ): array {
         return [
             'booking_id' => $booking?->id,
@@ -70,11 +84,44 @@ class InvoiceService
             'customer_phone' => $booking?->phone ?? ($invoiceInput['customer_phone'] ?? null),
             'cashier_id' => $cashierId,
             'barber_id' => $barberId,
-            ...$totals,
-            'payment_method' => $invoiceInput['payment_method'],
+            'subtotal' => $totals['subtotal'],
+            'discount' => $totals['discount'],
+            'total' => $totals['total'],
+            'payment_method' => $paymentRows[0]['payment_method'],
             'notes' => $invoiceInput['notes'] ?? null,
             'paid_at' => now(),
         ];
+    }
+
+    private function paymentRows(array $payments, int $totalCents): array
+    {
+        $rows = array_map(fn (array $payment) => [
+            'payment_method' => $payment['payment_method'],
+            'amount_cents' => (int) round((float) $payment['amount'] * 100),
+        ], $payments);
+
+        if (array_sum(array_column($rows, 'amount_cents')) !== $totalCents) {
+            throw ValidationException::withMessages([
+                'payments' => 'يجب أن يساوي مجموع مبالغ الدفع إجمالي الفاتورة بالضبط.',
+            ]);
+        }
+
+        if ($totalCents > 0 && collect($rows)->contains(fn (array $row) => $row['amount_cents'] <= 0)) {
+            throw ValidationException::withMessages([
+                'payments' => 'يجب أن يكون مبلغ كل طريقة دفع أكبر من صفر.',
+            ]);
+        }
+
+        if ($totalCents === 0 && count($rows) !== 1) {
+            throw ValidationException::withMessages([
+                'payments' => 'الفاتورة المجانية تقبل طريقة دفع واحدة فقط بمبلغ صفر.',
+            ]);
+        }
+
+        return array_map(fn (array $row) => [
+            'payment_method' => $row['payment_method'],
+            'amount' => $row['amount_cents'] / 100,
+        ], $rows);
     }
 
     private function resolveBarber(?Booking $booking, ?int $requestedBarberId): Employee
