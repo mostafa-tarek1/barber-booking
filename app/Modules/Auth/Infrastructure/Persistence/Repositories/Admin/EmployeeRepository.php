@@ -14,6 +14,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class EmployeeRepository extends BaseRepositoryAbstract
 {
@@ -122,9 +123,9 @@ class EmployeeRepository extends BaseRepositoryAbstract
                 $employee_device->delete();
             }
 
-            // delete sanctum tokens for this employee
-            if (method_exists($employee, 'tokens')) {
-                $employee->tokens()->delete();
+            $accessToken = $employee->currentAccessToken();
+            if ($accessToken instanceof PersonalAccessToken) {
+                $accessToken->delete();
             }
 
             return true;
