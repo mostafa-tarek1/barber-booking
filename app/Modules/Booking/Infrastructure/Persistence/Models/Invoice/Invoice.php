@@ -4,6 +4,7 @@ namespace App\Modules\Booking\Infrastructure\Persistence\Models\Invoice;
 
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
+use App\Modules\Booking\Infrastructure\Persistence\Models\SalonCustomer\SalonCustomer;
 use Illuminate\Database\Eloquent\Model;
 
 class Invoice extends Model
@@ -11,6 +12,7 @@ class Invoice extends Model
     protected $fillable = [
         'invoice_number',
         'booking_id',
+        'salon_customer_id',
         'customer_name',
         'customer_phone',
         'cashier_id',
@@ -44,6 +46,11 @@ class Invoice extends Model
     public function booking()
     {
         return $this->belongsTo(Booking::class);
+    }
+
+    public function salonCustomer()
+    {
+        return $this->belongsTo(SalonCustomer::class);
     }
 
     public function cashier()
