@@ -49,7 +49,7 @@ class InvoiceController extends Controller
         ]);
 
         $invoices = Invoice::query()
-            ->with(['payments', 'cashier:id,first_name,last_name', 'barber:id,first_name,last_name'])
+            ->with(['payments', 'salonCustomer', 'cashier:id,first_name,last_name', 'barber:id,first_name,last_name'])
             ->when(
                 $request->user()->employee_type === 'barber',
                 fn ($query) => $query->where('barber_id', $request->user()->id)
@@ -86,6 +86,7 @@ class InvoiceController extends Controller
             ->with([
                 'items',
                 'payments',
+                'salonCustomer',
                 'booking:id,date,from_hour,to_hour',
                 'cashier:id,first_name,last_name',
                 'barber:id,first_name,last_name',

@@ -2,6 +2,7 @@
 
 use App\Modules\Booking\Http\Controllers\Dashboard\Booking\BookingController;
 use App\Modules\Booking\Http\Controllers\Dashboard\Invoice\InvoiceController;
+use App\Modules\Booking\Http\Controllers\Dashboard\SalonCustomer\SalonCustomerController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('dashboard')->group(function () {
@@ -20,6 +21,7 @@ Route::prefix('dashboard')->group(function () {
         });
 
         Route::middleware('employeeRole:admin,super_admin,employee')->group(function () {
+            Route::post('fetch_salon_customers', [SalonCustomerController::class, 'index']);
             Route::post('create_booking', [BookingController::class, 'createBooking']);
             Route::post('update_booking', [BookingController::class, 'updateBooking']);
             Route::post('delete_booking', [BookingController::class, 'deleteBooking']);

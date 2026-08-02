@@ -6,8 +6,10 @@ use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Booking\Domain\Enums\BookingStatusEnum;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
+use App\Modules\Booking\Infrastructure\Persistence\Models\SalonCustomer\SalonCustomer;
 use App\Modules\Service\Infrastructure\Persistence\Models\Package\Package;
 use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
+use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -17,6 +19,8 @@ class InvoiceService
     {
         return DB::transaction(function () use ($invoiceInput, $cashierId) {
             $booking = $this->lockedBooking($invoiceInput['booking_id'] ?? null);
+            $salonCustomer = $this->salonCustomer($booking, $invoiceInput);
+            $invoiceInput['salon_customer_id'] = $salonCustomer?->id;
             $barber = $this->resolveBarber($booking, $invoiceInput['barber_id'] ?? null);
             $requestedItems = $this->removeAlreadyBookedItems($booking, $invoiceInput['items']);
             $items = [
@@ -45,6 +49,7 @@ class InvoiceService
             return $invoice->load([
                 'items',
                 'payments',
+                'salonCustomer',
                 'booking:id,date,from_hour,to_hour',
                 'cashier:id,first_name,last_name',
                 'barber:id,first_name,last_name',
@@ -80,6 +85,7 @@ class InvoiceService
     ): array {
         return [
             'booking_id' => $booking?->id,
+            'salon_customer_id' => $invoiceInput['salon_customer_id'],
             'customer_name' => $booking?->name ?? $invoiceInput['customer_name'],
             'customer_phone' => $booking?->phone ?? ($invoiceInput['customer_phone'] ?? null),
             'cashier_id' => $cashierId,
@@ -91,6 +97,26 @@ class InvoiceService
             'notes' => $invoiceInput['notes'] ?? null,
             'paid_at' => now(),
         ];
+    }
+
+    private function salonCustomer(?Booking $booking, array $invoiceInput): ?SalonCustomer
+    {
+        $name = trim($booking?->name ?? $invoiceInput['customer_name']);
+        $phone = trim($booking?->phone ?? ($invoiceInput['customer_phone'] ?? ''));
+        $normalizedPhone = PhoneNumber::normalize($phone);
+        if (! $normalizedPhone) {
+            return null;
+        }
+
+        SalonCustomer::query()->upsert([[
+            'name' => $name,
+            'phone' => $phone,
+            'normalized_phone' => $normalizedPhone,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]], ['normalized_phone'], ['name', 'phone', 'updated_at']);
+
+        return SalonCustomer::query()->where('normalized_phone', $normalizedPhone)->firstOrFail();
     }
 
     private function paymentRows(array $payments, int $totalCents): array
