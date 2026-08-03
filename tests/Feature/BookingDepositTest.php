@@ -95,6 +95,32 @@ class BookingDepositTest extends TestCase
         ]);
     }
 
+    public function test_cancelled_booking_can_be_permanently_deleted_with_its_deposit(): void
+    {
+        $booking = Booking::query()->create([
+            'name' => 'حجز ملغي',
+            'status' => BookingStatusEnum::CANCELLED->value,
+        ]);
+        app(BookingDepositService::class)->collect(
+            $booking,
+            BookingDTO::fromArray([
+                'deposit_amount' => 50,
+                'deposit_payment_method' => 'cash',
+            ]),
+            10000
+        );
+
+        $response = $this->withoutMiddleware()->postJson('/dashboard/delete_booking', [
+            'booking_id' => $booking->id,
+        ]);
+
+        $response
+            ->assertSuccessful()
+            ->assertJsonPath('data.deleted', true);
+        $this->assertDatabaseMissing('bookings', ['id' => $booking->id]);
+        $this->assertDatabaseMissing('booking_deposits', ['booking_id' => $booking->id]);
+    }
+
     public function test_deposit_above_booking_total_is_rejected(): void
     {
         $booking = Booking::query()->create(['name' => 'عميل اختبار', 'status' => 1]);

@@ -345,7 +345,7 @@ class BookingUseCase
     public function deleteBooking(BookingFilterDTO $bookingFilterDto): DataStatus
     {
         try {
-            $booking = DB::transaction(function () use ($bookingFilterDto) {
+            $result = DB::transaction(function () use ($bookingFilterDto) {
                 $booking = $this->bookingRepository->getModel()->newQuery()
                     ->with('invoice')
                     ->lockForUpdate()
@@ -354,10 +354,23 @@ class BookingUseCase
                     throw ValidationException::withMessages(['booking_id' => 'الحجز غير موجود.']);
                 }
                 if ($booking->invoice) {
-                    throw ValidationException::withMessages(['booking_id' => 'لا يمكن إلغاء حجز مرتبط بفاتورة.']);
+                    throw ValidationException::withMessages([
+                        'booking_id' => 'لا يمكن إلغاء أو حذف حجز مرتبط بفاتورة.',
+                    ]);
                 }
                 if ((int) $booking->status === BookingStatusEnum::FINISHED->value) {
                     throw ValidationException::withMessages(['booking_id' => 'لا يمكن إلغاء حجز مكتمل.']);
+                }
+
+                if ((int) $booking->status === BookingStatusEnum::CANCELLED->value) {
+                    $bookingId = $booking->id;
+                    $booking->forceDelete();
+
+                    return [
+                        'id' => $bookingId,
+                        'status' => BookingStatusEnum::CANCELLED->value,
+                        'deleted' => true,
+                    ];
                 }
 
                 $oldStatus = (int) $booking->status;
@@ -374,13 +387,21 @@ class BookingUseCase
                     );
                 }
 
-                return $booking;
+                return [
+                    'id' => $booking->id,
+                    'status' => BookingStatusEnum::CANCELLED->value,
+                    'deleted' => false,
+                ];
             });
 
             $this->cacheService->clearBookingCache();
             $this->statisticsCacheService->clearAllStatisticsCache();
 
-            return DataSuccess(true, 'Booking cancelled successfully', $booking);
+            return DataSuccess(
+                true,
+                $result['deleted'] ? 'Booking deleted successfully' : 'Booking cancelled successfully',
+                $result
+            );
         } catch (\Exception $e) {
             Log::error('Error deleting booking: ' . $e->getMessage());
             return DataFailed(false, $e->getMessage(), 400);
