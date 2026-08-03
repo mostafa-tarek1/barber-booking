@@ -8,6 +8,7 @@ use App\Modules\Booking\Http\Requests\Booking\FetchBookingRequest;
 use App\Modules\Booking\Http\Requests\Booking\UpdateBookingRequest;
 use App\Modules\Booking\Application\UseCases\Booking\BookingUseCase;
 use App\Modules\Booking\Application\Services\BarberAvailabilityService;
+use App\Modules\Booking\Application\Services\BookingDepositService;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Modules\Blog\Application\Enums\View\ViewTypeEnum;
@@ -23,9 +24,13 @@ class BookingController extends Controller
         $this->availabilityService = $availabilityService;
     }
 
-    public function createBooking(CreateBookingRequest $request)
+    public function createBooking(CreateBookingRequest $request, BookingDepositService $depositService)
     {
-        return $this->bookingUseCase->createBooking($request->toDTO(), ViewTypeEnum::MOBILE->value)->response();
+        return $this->bookingUseCase->createBooking(
+            $request->toDTO(),
+            ViewTypeEnum::MOBILE->value,
+            $depositService
+        )->response();
     }
 
     /**

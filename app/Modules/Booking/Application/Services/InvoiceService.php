@@ -31,7 +31,7 @@ class InvoiceService
                 throw ValidationException::withMessages(['items' => 'يجب إضافة بند واحد على الأقل للفاتورة.']);
             }
             $totals = $this->invoiceTotals($items, (float) ($invoiceInput['discount'] ?? 0));
-            $paymentRows = $this->paymentRows($invoiceInput['payments'], $totals['total_cents']);
+            $paymentRows = $this->paymentRows($invoiceInput['payments'], $totals['total_cents'], $booking);
             $invoice = Invoice::create($this->invoiceAttributes(
                 $invoiceInput,
                 $booking,
@@ -119,7 +119,7 @@ class InvoiceService
         return SalonCustomer::query()->where('normalized_phone', $normalizedPhone)->firstOrFail();
     }
 
-    private function paymentRows(array $payments, int $totalCents): array
+    private function paymentRows(array $payments, int $totalCents, ?Booking $booking): array
     {
         $rows = array_map(fn (array $payment) => [
             'payment_method' => $payment['payment_method'],
@@ -144,10 +144,28 @@ class InvoiceService
             ]);
         }
 
+        $this->assertDepositCovered($booking, $rows, $totalCents);
+
         return array_map(fn (array $row) => [
             'payment_method' => $row['payment_method'],
             'amount' => $row['amount_cents'] / 100,
         ], $rows);
+    }
+
+    private function assertDepositCovered(?Booking $booking, array $paymentRows, int $totalCents): void
+    {
+        if ($booking?->deposit === null) {
+            return;
+        }
+
+        $depositCents = (int) round((float) $booking->deposit->amount * 100);
+        $methodAmountCents = collect($paymentRows)
+            ->firstWhere('payment_method', $booking->deposit->payment_method)['amount_cents'] ?? 0;
+        if ($depositCents > $totalCents || $methodAmountCents < $depositCents) {
+            throw ValidationException::withMessages([
+                'payments' => 'يجب احتساب الديبوزيت المحصل ضمن مدفوعات الفاتورة.',
+            ]);
+        }
     }
 
     private function resolveBarber(?Booking $booking, ?int $requestedBarberId): Employee
@@ -179,7 +197,7 @@ class InvoiceService
             return null;
         }
 
-        $booking = Booking::query()->with(['services', 'packages'])->lockForUpdate()->findOrFail($bookingId);
+        $booking = Booking::query()->with(['services', 'packages', 'deposit'])->lockForUpdate()->findOrFail($bookingId);
         if ($booking->status === BookingStatusEnum::CANCELLED->value) {
             throw ValidationException::withMessages(['booking_id' => 'لا يمكن إصدار فاتورة لحجز ملغي.']);
         }

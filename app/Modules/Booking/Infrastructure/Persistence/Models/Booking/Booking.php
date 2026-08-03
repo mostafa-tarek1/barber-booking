@@ -3,6 +3,7 @@
 namespace App\Modules\Booking\Infrastructure\Persistence\Models\Booking;
 
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
+use App\Modules\Booking\Infrastructure\Persistence\Models\BookingDeposit\BookingDeposit;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
 use App\Modules\Service\Infrastructure\Persistence\Models\Package\Package;
 use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
@@ -87,5 +88,10 @@ class Booking extends Model implements TranslatableContract
     public function invoice()
     {
         return $this->hasOne(Invoice::class);
+    }
+
+    public function deposit()
+    {
+        return $this->hasOne(BookingDeposit::class);
     }
 }

@@ -32,6 +32,12 @@ class CreateBookingRequest extends BaseRequestAbstract
             'packages.*' => ['integer', 'distinct', 'exists:packages,id'],
             'employee_id' => ['required', 'exists:employees,id'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'deposit_amount' => ['nullable', 'numeric', 'min:0.01', 'decimal:0,2'],
+            'deposit_payment_method' => [
+                'required_with:deposit_amount',
+                'nullable',
+                Rule::in(['cash', 'card', 'wallet']),
+            ],
         ];
     }
 }

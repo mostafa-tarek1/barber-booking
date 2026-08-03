@@ -20,6 +20,7 @@ use App\Modules\Booking\Http\Resources\Api\Booking\BookingDetailResource as ApiB
 use App\Modules\Booking\Application\Services\BookingCacheService;
 use App\Modules\Booking\Application\Services\BarberAvailabilityService;
 use App\Modules\Booking\Application\Services\BookingSelectionService;
+use App\Modules\Booking\Application\Services\BookingDepositService;
 use App\Modules\Statistics\Application\Services\StatisticsCacheService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -65,7 +66,14 @@ class BookingUseCase
             }
 
             // إنشاء cache key بناءً على الفلاتر
-            $filters = $bookingFilterDto->toArray();
+            $filters = [
+                ...$bookingFilterDto->toArray(),
+                'search' => $bookingFilterDto->search,
+                'date' => $bookingFilterDto->date,
+                'date_from' => $bookingFilterDto->date_from,
+                'date_to' => $bookingFilterDto->date_to,
+                'status' => $bookingFilterDto->status,
+            ];
             $barberId = $this->employee?->employee_type === 'barber' ? $this->employee->id : null;
             $cacheKey = $this->cacheService->generateListCacheKey([
                 ...$filters,
@@ -82,7 +90,7 @@ class BookingUseCase
                     whereHasRelations: $barberId
                         ? ['services' => ['booking_service.employee_id' => $barberId]]
                         : [],
-                    withRelations: ['services', 'packages', 'createdBy', 'updatedBy']
+                    withRelations: ['services', 'packages', 'deposit', 'createdBy', 'updatedBy']
                 );
             });
 
@@ -128,6 +136,7 @@ class BookingUseCase
                     ]);
                 },
                 'packages',
+                'deposit',
             ]);
 
             // Get the employee from the first service if available
@@ -162,10 +171,14 @@ class BookingUseCase
      *
      * services in DTO: [ ['id' => 1], ['id' => 2], ... ]
      */
-    public function createBooking(BookingDTO $bookingDTO, $view = ViewTypeEnum::DASHBOARD->value): DataStatus
+    public function createBooking(
+        BookingDTO $bookingDTO,
+        string $view,
+        BookingDepositService $depositService
+    ): DataStatus
     {
         try {
-            $booking = DB::transaction(function () use ($bookingDTO, $view) {
+            $booking = DB::transaction(function () use ($bookingDTO, $view, $depositService) {
                 $selection = $this->selectionService->resolve(
                     $bookingDTO->services ?? [],
                     $bookingDTO->packages ?? []
@@ -193,6 +206,9 @@ class BookingUseCase
 
                 $booking = $this->bookingRepository->create($bookingDTO);
                 $this->persistSelection($booking->id, $bookingDTO->employee_id, $selection);
+                if ($view === ViewTypeEnum::DASHBOARD->value) {
+                    $depositService->collect($booking, $bookingDTO, $selection['total_price_cents']);
+                }
                 $booking->load('services');
                 $this->sendBookingCreatedNotification($booking, $booking->services, $bookingDTO->employee_id);
 
@@ -202,7 +218,7 @@ class BookingUseCase
             $this->cacheService->clearBookingCache();
             $this->statisticsCacheService->clearAllStatisticsCache();
 
-            $booking->load(['services', 'packages', 'createdBy', 'updatedBy']);
+            $booking->load(['services', 'packages', 'deposit', 'createdBy', 'updatedBy']);
             $resource = $this->handleBookingDetailResource($booking, $view);
 
             return DataSuccess(true, 'Booking created successfully', $resource);
@@ -293,7 +309,7 @@ class BookingUseCase
 
             $this->cacheService->clearBookingCache();
             $this->statisticsCacheService->clearAllStatisticsCache();
-            $booking->load(['services', 'packages', 'createdBy', 'updatedBy']);
+            $booking->load(['services', 'packages', 'deposit', 'createdBy', 'updatedBy']);
 
             return DataSuccess(true, 'Booking updated successfully', $this->handleBookingDetailResource($booking, $view));
         } catch (\Exception $e) {
