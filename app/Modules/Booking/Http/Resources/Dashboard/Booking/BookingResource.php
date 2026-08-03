@@ -47,7 +47,8 @@ class BookingResource extends JsonResource
                     return [
                         'id' => $service->id,
                         'package_id' => $service->pivot->package_id,
-                        'name' => $service->pivot->name_snapshot ?: $service->name,
+                        'name' => $service->translate('ar')?->name
+                            ?: ($service->pivot->name_snapshot ?: $service->name),
                         'price' => $service->pivot->price_snapshot ?? $service->price,
                         'duration' => $service->pivot->duration_snapshot ?? $service->duration,
                         'quantity' => $service->pivot->quantity ?? 1,
@@ -57,7 +58,8 @@ class BookingResource extends JsonResource
             }),
             'packages' => $this->whenLoaded('packages', fn () => $this->packages->map(fn ($package) => [
                 'id' => $package->id,
-                'name' => $package->pivot->name_snapshot ?: $package->name,
+                'name' => $package->translate('ar')?->name
+                    ?: ($package->pivot->name_snapshot ?: $package->name),
                 'price' => $package->pivot->price_snapshot,
                 'duration' => $package->pivot->duration_snapshot,
             ])),
