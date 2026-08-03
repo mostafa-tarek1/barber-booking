@@ -197,7 +197,10 @@ class InvoiceService
             return null;
         }
 
-        $booking = Booking::query()->with(['services', 'packages', 'deposit'])->lockForUpdate()->findOrFail($bookingId);
+        $booking = Booking::query()
+            ->with(['services.translations', 'packages.translations', 'deposit'])
+            ->lockForUpdate()
+            ->findOrFail($bookingId);
         if ($booking->status === BookingStatusEnum::CANCELLED->value) {
             throw ValidationException::withMessages(['booking_id' => 'لا يمكن إصدار فاتورة لحجز ملغي.']);
         }
@@ -257,7 +260,8 @@ class InvoiceService
             'service_id' => null,
             'package_id' => $package->id,
             'employee_id' => $booking->services->first()?->pivot->employee_id,
-            'description' => $package->pivot->name_snapshot ?: $package->name,
+            'description' => $package->translate('ar')?->name
+                ?: ($package->pivot->name_snapshot ?: $package->name),
             'quantity' => 1,
             'unit_price_cents' => (int) round((float) $package->pivot->price_snapshot * 100),
             'total_cents' => (int) round((float) $package->pivot->price_snapshot * 100),
@@ -275,7 +279,8 @@ class InvoiceService
                     'service_id' => $service->id,
                     'package_id' => null,
                     'employee_id' => $service->pivot->employee_id,
-                    'description' => $service->pivot->name_snapshot ?: $service->name,
+                    'description' => $service->translate('ar')?->name
+                        ?: ($service->pivot->name_snapshot ?: $service->name),
                     'quantity' => $quantity,
                     'unit_price_cents' => $unitPriceCents,
                     'total_cents' => $unitPriceCents * $quantity,

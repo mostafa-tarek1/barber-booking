@@ -145,7 +145,7 @@ class BookingController extends Controller
     {
         return $this->bookingUseCase->createBooking(
             $request->toDTO(),
-            ViewTypeEnum::DASHBOARD->value,
+            ViewTypeEnum::DASHBOARD,
             $depositService
         )->response();
     }

@@ -90,7 +90,13 @@ class BookingUseCase
                     whereHasRelations: $barberId
                         ? ['services' => ['booking_service.employee_id' => $barberId]]
                         : [],
-                    withRelations: ['services', 'packages', 'deposit', 'createdBy', 'updatedBy']
+                    withRelations: [
+                        'services.translations',
+                        'packages.translations',
+                        'deposit',
+                        'createdBy',
+                        'updatedBy',
+                    ]
                 );
             });
 
@@ -126,16 +132,18 @@ class BookingUseCase
             // Load the relationships with the pivot data
             $booking->load([
                 'services' => function ($query) {
-                    $query->withPivot([
-                        'employee_id',
-                        'package_id',
-                        'name_snapshot',
-                        'price_snapshot',
-                        'duration_snapshot',
-                        'quantity',
-                    ]);
+                    $query
+                        ->with('translations')
+                        ->withPivot([
+                            'employee_id',
+                            'package_id',
+                            'name_snapshot',
+                            'price_snapshot',
+                            'duration_snapshot',
+                            'quantity',
+                        ]);
                 },
-                'packages',
+                'packages.translations',
                 'deposit',
             ]);
 
@@ -173,7 +181,7 @@ class BookingUseCase
      */
     public function createBooking(
         BookingDTO $bookingDTO,
-        string $view,
+        ViewTypeEnum $view,
         BookingDepositService $depositService
     ): DataStatus
     {
@@ -197,7 +205,7 @@ class BookingUseCase
 
                 $bookingDTO->created_by = $this->employee->id ?? null;
                 $bookingDTO->to_hour = $from->copy()->addMinutes($selection['duration'])->format('H:i');
-                $bookingDTO->status = $view === ViewTypeEnum::DASHBOARD->value
+                $bookingDTO->status = $view === ViewTypeEnum::DASHBOARD
                     ? BookingStatusEnum::CONFIRMED->value
                     : BookingStatusEnum::PENDING->value;
                 $bookingDTO->expires_at = $bookingDTO->status === BookingStatusEnum::PENDING->value
@@ -206,7 +214,7 @@ class BookingUseCase
 
                 $booking = $this->bookingRepository->create($bookingDTO);
                 $this->persistSelection($booking->id, $bookingDTO->employee_id, $selection);
-                if ($view === ViewTypeEnum::DASHBOARD->value) {
+                if ($view === ViewTypeEnum::DASHBOARD) {
                     $depositService->collect($booking, $bookingDTO, $selection['total_price_cents']);
                 }
                 $booking->load('services');
@@ -218,8 +226,14 @@ class BookingUseCase
             $this->cacheService->clearBookingCache();
             $this->statisticsCacheService->clearAllStatisticsCache();
 
-            $booking->load(['services', 'packages', 'deposit', 'createdBy', 'updatedBy']);
-            $resource = $this->handleBookingDetailResource($booking, $view);
+            $booking->load([
+                'services.translations',
+                'packages.translations',
+                'deposit',
+                'createdBy',
+                'updatedBy',
+            ]);
+            $resource = $this->handleBookingDetailResource($booking, $view->value);
 
             return DataSuccess(true, 'Booking created successfully', $resource);
         } catch (\Exception $e) {
@@ -309,7 +323,13 @@ class BookingUseCase
 
             $this->cacheService->clearBookingCache();
             $this->statisticsCacheService->clearAllStatisticsCache();
-            $booking->load(['services', 'packages', 'deposit', 'createdBy', 'updatedBy']);
+            $booking->load([
+                'services.translations',
+                'packages.translations',
+                'deposit',
+                'createdBy',
+                'updatedBy',
+            ]);
 
             return DataSuccess(true, 'Booking updated successfully', $this->handleBookingDetailResource($booking, $view));
         } catch (\Exception $e) {
@@ -402,7 +422,7 @@ class BookingUseCase
             DB::table('booking_package')->insert([
                 'booking_id' => $bookingId,
                 'package_id' => $package->id,
-                'name_snapshot' => $package->name,
+                'name_snapshot' => $package->translate('ar')?->name ?: $package->name,
                 'price_snapshot' => $package->price,
                 'duration_snapshot' => $package->duration,
                 'created_at' => now(),
