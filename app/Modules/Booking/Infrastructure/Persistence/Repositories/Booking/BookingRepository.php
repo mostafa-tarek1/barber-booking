@@ -34,6 +34,18 @@ class BookingRepository extends BaseRepositoryAbstract
     try {
       $query = $this->getModel()->query();
 
+      $query
+        ->when($dto->search ?? null, fn ($bookingQuery, $search) => $bookingQuery->where(
+          fn ($customerQuery) => $customerQuery
+            ->where('name', 'like', "%{$search}%")
+            ->orWhere('phone', 'like', "%{$search}%")
+            ->orWhere('email', 'like', "%{$search}%")
+        ))
+        ->when($dto->date ?? null, fn ($bookingQuery, $date) => $bookingQuery->whereDate('date', $date))
+        ->when($dto->date_from ?? null, fn ($bookingQuery, $date) => $bookingQuery->whereDate('date', '>=', $date))
+        ->when($dto->date_to ?? null, fn ($bookingQuery, $date) => $bookingQuery->whereDate('date', '<=', $date))
+        ->when($dto->status !== null, fn ($bookingQuery) => $bookingQuery->where('status', $dto->status));
+
       // البحث بالكلمة
       $query->when(isset($dto->word), function ($q) use ($dto, $translatableFields, $operator) {
         $q->where(function ($subQuery) use ($dto, $translatableFields, $operator) {

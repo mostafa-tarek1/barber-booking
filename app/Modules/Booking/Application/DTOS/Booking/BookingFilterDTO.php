@@ -12,6 +12,7 @@ class BookingFilterDTO extends BaseDTOAbstract
     public $name;
     public $phone;
     public $email;
+    public $date;
     public $date_from;
     public $date_to;
     public $status;
@@ -27,6 +28,10 @@ class BookingFilterDTO extends BaseDTOAbstract
         return [
             'excludeAttributes',
             'search',
+            'date',
+            'date_from',
+            'date_to',
+            'status',
         ];
     }
 }

@@ -38,8 +38,17 @@ class BookingDTO extends BaseDTOAbstract
 
     public $notes;
 
+    public $deposit_amount;
+
+    public $deposit_payment_method;
+
     public function __construct(array $data = [])
     {
         parent::__construct($data);
+    }
+
+    public function excludedAttributes(): array
+    {
+        return ['deposit_amount', 'deposit_payment_method'];
     }
 }

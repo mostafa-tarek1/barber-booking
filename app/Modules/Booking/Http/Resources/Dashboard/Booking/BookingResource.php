@@ -61,6 +61,11 @@ class BookingResource extends JsonResource
                 'price' => $package->pivot->price_snapshot,
                 'duration' => $package->pivot->duration_snapshot,
             ])),
+            'deposit' => $this->whenLoaded('deposit', fn () => $this->deposit ? [
+                'amount' => $this->deposit->amount,
+                'payment_method' => $this->deposit->payment_method,
+                'collected_at' => $this->deposit->collected_at?->toDateTimeString(),
+            ] : null),
             'employee' => $this->whenLoaded('employee', function () {
                 return [
                     'id' => $this->employee->id,

@@ -8,6 +8,7 @@ use App\Modules\Booking\Http\Requests\Booking\FetchBookingRequest;
 use App\Modules\Booking\Http\Requests\Booking\UpdateBookingRequest;
 use App\Modules\Booking\Application\UseCases\Booking\BookingUseCase;
 use App\Modules\Booking\Application\Services\BarberAvailabilityService;
+use App\Modules\Booking\Application\Services\BookingDepositService;
 use App\Modules\Booking\Infrastructure\Persistence\Models\BarberTimeOff\BarberTimeOff;
 use App\Modules\Booking\Infrastructure\Persistence\Models\BarberWorkingHour\BarberWorkingHour;
 use Illuminate\Http\Request;
@@ -140,9 +141,13 @@ class BookingController extends Controller
      *     )
      * )
      */
-    public function createBooking(CreateBookingRequest $request)
+    public function createBooking(CreateBookingRequest $request, BookingDepositService $depositService)
     {
-        return $this->bookingUseCase->createBooking($request->toDTO())->response();
+        return $this->bookingUseCase->createBooking(
+            $request->toDTO(),
+            ViewTypeEnum::DASHBOARD->value,
+            $depositService
+        )->response();
     }
 
     /**

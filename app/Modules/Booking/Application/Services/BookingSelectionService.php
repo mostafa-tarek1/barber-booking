@@ -31,7 +31,18 @@ class BookingSelectionService
             'duration' => (int) $serviceRows->sum(
                 fn (array $row) => $row['duration_snapshot'] * $row['quantity']
             ),
+            'total_price_cents' => $this->totalPriceCents($serviceRows, $packages),
         ];
+    }
+
+    private function totalPriceCents(Collection $serviceRows, Collection $packages): int
+    {
+        $directServices = $serviceRows
+            ->whereNull('package_id')
+            ->sum(fn (array $row) => (float) $row['price_snapshot'] * $row['quantity']);
+        $packageTotal = $packages->sum(fn (Package $package) => (float) $package->price);
+
+        return (int) round(($directServices + $packageTotal) * 100);
     }
 
     private function activeServices(array $serviceIds): Collection
