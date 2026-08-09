@@ -9,6 +9,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class Invoice extends Model
 {
+    protected $appends = [
+        'paid_amount',
+        'remaining_amount',
+    ];
+
     protected $fillable = [
         'invoice_number',
         'booking_id',
@@ -61,5 +66,21 @@ class Invoice extends Model
     public function barber()
     {
         return $this->belongsTo(Employee::class, 'barber_id');
+    }
+
+    public function getPaidAmountAttribute(): string
+    {
+        $paidAmount = $this->relationLoaded('payments')
+            ? $this->payments->sum('amount')
+            : $this->payments()->sum('amount');
+
+        return number_format((float) $paidAmount, 2, '.', '');
+    }
+
+    public function getRemainingAmountAttribute(): string
+    {
+        $remaining = max(0, (float) $this->total - (float) $this->paid_amount);
+
+        return number_format($remaining, 2, '.', '');
     }
 }

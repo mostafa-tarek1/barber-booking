@@ -26,6 +26,7 @@ Route::prefix('dashboard')->group(function () {
             Route::post('update_booking', [BookingController::class, 'updateBooking']);
             Route::post('delete_booking', [BookingController::class, 'deleteBooking']);
             Route::post('create_invoice', [InvoiceController::class, 'create']);
+            Route::post('collect_invoice_payment', [InvoiceController::class, 'collectPayment']);
         });
 
         Route::middleware('employeeRole:admin,super_admin')->group(function () {
