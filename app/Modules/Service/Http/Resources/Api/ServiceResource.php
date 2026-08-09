@@ -31,6 +31,7 @@ class ServiceResource extends JsonResource
             'price'     => $this->price,
             'duration'  => $this->duration,
             'bookings_count' => (int) $this->bookings_count,
+            'sales_count' => (int) $this->sales_count,
             'is_active' => (bool) $this->is_active,
             'created_at'=> $this->created_at?->toDateTimeString(),
             'updated_at'=> $this->updated_at?->toDateTimeString(),

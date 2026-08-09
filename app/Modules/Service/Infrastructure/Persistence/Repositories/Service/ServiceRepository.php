@@ -3,6 +3,7 @@
 namespace App\Modules\Service\Infrastructure\Persistence\Repositories\Service;
 
 
+use App\Modules\Booking\Domain\Enums\InvoiceStatusEnum;
 use Illuminate\Pagination\LengthAwarePaginator;
 use App\Modules\Base\Domain\DTO\BaseDTOInterface;
 use App\Modules\Base\Domain\Repositories\BaseRepositoryAbstract;
@@ -32,7 +33,12 @@ class ServiceRepository extends BaseRepositoryAbstract
             ->query()
             ->withCount([
                 'bookings as bookings_count' => fn ($bookingQuery) => $bookingQuery->where('status', 3),
-            ]);
+            ])
+            ->withSum([
+                'invoiceItems as sales_count' => fn ($invoiceItemQuery) => $invoiceItemQuery
+                    ->whereHas('invoice', fn ($invoiceQuery) => $invoiceQuery
+                        ->where('status', InvoiceStatusEnum::PAID->value)),
+            ], 'quantity');
 
         $query->when(isset($dto->word), function ($q) use ($dto, $translatableFields) {
             $q->where(function ($subQuery) use ($dto, $translatableFields) {

@@ -24,6 +24,11 @@ class InvoiceItem extends Model
         'total' => 'decimal:2',
     ];
 
+    public function invoice()
+    {
+        return $this->belongsTo(Invoice::class);
+    }
+
     public function service()
     {
         return $this->belongsTo(Service::class);
