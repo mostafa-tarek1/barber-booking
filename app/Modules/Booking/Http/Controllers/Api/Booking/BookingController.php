@@ -2,20 +2,20 @@
 
 namespace App\Modules\Booking\Http\Controllers\Api\Booking;
 
-use App\Modules\Booking\Http\Requests\Booking\BookingIdRequest;
-use App\Modules\Booking\Http\Requests\Booking\CreateBookingRequest;
-use App\Modules\Booking\Http\Requests\Booking\FetchBookingRequest;
-use App\Modules\Booking\Http\Requests\Booking\UpdateBookingRequest;
-use App\Modules\Booking\Application\UseCases\Booking\BookingUseCase;
-use App\Modules\Booking\Application\Services\BarberAvailabilityService;
-use App\Modules\Booking\Application\Services\BookingDepositService;
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Modules\Blog\Application\Enums\View\ViewTypeEnum;
+use App\Modules\Booking\Application\Services\BarberAvailabilityService;
+use App\Modules\Booking\Application\Services\BookingDepositService;
+use App\Modules\Booking\Application\UseCases\Booking\BookingUseCase;
+use App\Modules\Booking\Http\Requests\Booking\CreateBookingRequest;
+use App\Support\BusinessDay;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class BookingController extends Controller
 {
     protected $bookingUseCase;
+
     protected BarberAvailabilityService $availabilityService;
 
     public function __construct(BookingUseCase $bookingUseCase, BarberAvailabilityService $availabilityService)
@@ -35,9 +35,8 @@ class BookingController extends Controller
 
     /**
      * Check available time slots for an employee
-     * 
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     *
+     * @return JsonResponse
      */
     public function checkAvailability(Request $request)
     {
@@ -59,8 +58,8 @@ class BookingController extends Controller
             'status' => 200,
             'message' => 'Available time slots retrieved successfully',
             'data' => [
-                'suggested_slots' => $suggestedSlots
-            ]
+                'suggested_slots' => $suggestedSlots,
+            ],
         ]);
     }
 
@@ -68,7 +67,7 @@ class BookingController extends Controller
     {
         $validated = $request->validate([
             'employee_id' => ['required', 'integer', 'exists:employees,id'],
-            'date' => ['required', 'date', 'after_or_equal:today'],
+            'date' => ['required', 'date', 'after_or_equal:'.BusinessDay::currentDate()],
             'services' => ['nullable', 'array', 'required_without:packages'],
             'services.*' => ['integer', 'distinct', 'exists:services,id'],
             'packages' => ['nullable', 'array', 'required_without:services'],

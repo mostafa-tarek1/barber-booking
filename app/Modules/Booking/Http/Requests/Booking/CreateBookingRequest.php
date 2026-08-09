@@ -5,6 +5,7 @@ namespace App\Modules\Booking\Http\Requests\Booking;
 use App\Modules\Base\Domain\Request\BaseRequestAbstract;
 use App\Modules\Booking\Application\DTOS\Booking\BookingDTO;
 use App\Modules\Booking\Domain\Enums\BookingStatusEnum;
+use App\Support\BusinessDay;
 use Illuminate\Validation\Rule;
 
 class CreateBookingRequest extends BaseRequestAbstract
@@ -21,7 +22,7 @@ class CreateBookingRequest extends BaseRequestAbstract
         return [
             'phone' => ['required', 'string', 'min:9', 'max:13'],
             'email' => ['nullable', 'email', 'max:255'],
-            'date' => ['required', 'date', 'after_or_equal:today'],
+            'date' => ['required', 'date', 'after_or_equal:'.BusinessDay::currentDate()],
             'name' => ['required', 'string', 'max:255'],
             'from_hour' => ['required', 'date_format:H:i'],
             'to_hour' => ['nullable', 'date_format:H:i', 'after:from_hour'],

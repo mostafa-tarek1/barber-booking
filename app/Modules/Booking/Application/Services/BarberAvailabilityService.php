@@ -13,12 +13,12 @@ use Illuminate\Support\Collection;
 class BarberAvailabilityService
 {
     private const WORK_START = '13:00';
+
     private const WORK_END = '01:00';
+
     private const SLOT_INTERVAL_MINUTES = 30;
 
-    public function __construct(private readonly BookingSelectionService $selectionService)
-    {
-    }
+    public function __construct(private readonly BookingSelectionService $selectionService) {}
 
     public function availableSlots(
         int $employeeId,
@@ -28,6 +28,7 @@ class BarberAvailabilityService
         array $packageIds = []
     ): array {
         $selection = $this->selectionService->resolve($serviceIds, $packageIds);
+
         return $this->availableSlotsForDuration($employeeId, $date, $selection['duration'], $excludeBookingId);
     }
 
@@ -46,8 +47,8 @@ class BarberAvailabilityService
             return [];
         }
         [$workStart, $workEnd] = $workPeriod;
-        $busyPeriods = $this->busyPeriods($employeeId, $date, $excludeBookingId);
-        $blockedPeriods = $this->blockedPeriods($employeeId, $date);
+        $busyPeriods = $this->busyPeriods($employeeId, $date, $workStart, $workEnd, $excludeBookingId);
+        $blockedPeriods = $this->blockedPeriods($employeeId, $date, $workStart, $workEnd);
 
         return $this->generateSlots($workStart, $workEnd, $duration, $busyPeriods->merge($blockedPeriods));
     }
@@ -73,6 +74,23 @@ class BarberAvailabilityService
     ): bool {
         return collect($this->availableSlotsForDuration($employeeId, $date, $duration, $excludeBookingId))
             ->contains('from_time', substr($fromHour, 0, 5));
+    }
+
+    public function slotStart(int $employeeId, string $date, string $fromHour): Carbon
+    {
+        $workPeriod = $this->workPeriod($employeeId, $date);
+        if (! $workPeriod) {
+            return Carbon::parse("$date $fromHour");
+        }
+
+        [$workStart, $workEnd] = $workPeriod;
+        $start = Carbon::parse("$date $fromHour");
+
+        if (! $workStart->isSameDay($workEnd) && $start->lt($workStart)) {
+            $start->addDay();
+        }
+
+        return $start;
     }
 
     private function isBookableBarber(int $employeeId): bool
@@ -117,8 +135,13 @@ class BarberAvailabilityService
         return [$start, $end];
     }
 
-    private function busyPeriods(int $employeeId, string $date, ?int $excludeBookingId): Collection
-    {
+    private function busyPeriods(
+        int $employeeId,
+        string $date,
+        Carbon $workStart,
+        Carbon $workEnd,
+        ?int $excludeBookingId
+    ): Collection {
         $periods = Booking::query()
             ->whereDate('date', $date)
             ->where(function ($query) {
@@ -133,27 +156,54 @@ class BarberAvailabilityService
             ->when($excludeBookingId, fn ($query) => $query->where('id', '!=', $excludeBookingId))
             ->whereHas('services', fn ($query) => $query->where('booking_service.employee_id', $employeeId))
             ->get(['id', 'date', 'from_hour', 'to_hour'])
-            ->map(fn (Booking $booking) => $this->period($date, $booking->from_hour, $booking->to_hour));
+            ->map(fn (Booking $booking) => $this->period(
+                $date,
+                $booking->from_hour,
+                $booking->to_hour,
+                $workStart,
+                $workEnd
+            ));
 
         return collect($periods->all());
     }
 
-    private function blockedPeriods(int $employeeId, string $date): Collection
-    {
+    private function blockedPeriods(
+        int $employeeId,
+        string $date,
+        Carbon $workStart,
+        Carbon $workEnd
+    ): Collection {
         $periods = BarberTimeOff::query()
             ->where('employee_id', $employeeId)
             ->whereDate('date', $date)
             ->where('is_day_off', false)
             ->get()
-            ->map(fn (BarberTimeOff $block) => $this->period($date, $block->from_hour, $block->to_hour));
+            ->map(fn (BarberTimeOff $block) => $this->period(
+                $date,
+                $block->from_hour,
+                $block->to_hour,
+                $workStart,
+                $workEnd
+            ));
 
         return collect($periods->all());
     }
 
-    private function period(string $date, string $fromHour, string $toHour): array
-    {
+    private function period(
+        string $date,
+        string $fromHour,
+        string $toHour,
+        Carbon $workStart,
+        Carbon $workEnd
+    ): array {
         $start = Carbon::parse("$date $fromHour");
         $end = Carbon::parse("$date $toHour");
+
+        if (! $workStart->isSameDay($workEnd) && $start->lt($workStart)) {
+            $start->addDay();
+            $end->addDay();
+        }
+
         if ($end->lessThanOrEqualTo($start)) {
             $end->addDay();
         }
@@ -176,7 +226,9 @@ class BarberAvailabilityService
             $slots[] = [
                 'from_time' => $start->format('H:i'),
                 'to_time' => $end->format('H:i'),
-                'label' => $start->format('g:i A') . ' - ' . $end->format('g:i A'),
+                'from_date' => $start->toDateString(),
+                'to_date' => $end->toDateString(),
+                'label' => $start->format('g:i A').' - '.$end->format('g:i A'),
             ];
         }
 
