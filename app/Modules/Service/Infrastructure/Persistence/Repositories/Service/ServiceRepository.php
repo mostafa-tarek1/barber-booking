@@ -28,7 +28,11 @@ class ServiceRepository extends BaseRepositoryAbstract
         array $whereHasRelations = [],
         array $whereHasMultipleRelations = []
     ): Collection|LengthAwarePaginator {
-        $query = $this->getModel()->query();
+        $query = $this->getModel()
+            ->query()
+            ->withCount([
+                'bookings as bookings_count' => fn ($bookingQuery) => $bookingQuery->where('status', 3),
+            ]);
 
         $query->when(isset($dto->word), function ($q) use ($dto, $translatableFields) {
             $q->where(function ($subQuery) use ($dto, $translatableFields) {
