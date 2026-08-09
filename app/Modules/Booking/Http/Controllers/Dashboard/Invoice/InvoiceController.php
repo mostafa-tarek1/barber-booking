@@ -4,7 +4,9 @@ namespace App\Modules\Booking\Http\Controllers\Dashboard\Invoice;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
+use App\Modules\Booking\Application\Services\InvoicePaymentService;
 use App\Modules\Booking\Application\Services\InvoiceService;
+use App\Modules\Booking\Domain\Enums\InvoiceStatusEnum;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
 use App\Support\BusinessDay;
 use Illuminate\Http\Request;
@@ -28,11 +30,13 @@ class InvoiceController extends Controller
             'items.*.unit_price' => ['required_without_all:items.*.service_id,items.*.package_id', 'nullable', 'numeric', 'min:0'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:99'],
             'discount' => ['nullable', 'numeric', 'min:0'],
-            'payments' => ['required', 'array', 'min:1', 'max:3'],
-            'payments.*.payment_method' => ['required', 'string', 'distinct', Rule::in(['cash', 'card', 'wallet'])],
-            'payments.*.amount' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
+            'settlement_type' => ['nullable', Rule::in(['immediate', 'deferred'])],
+            'payments' => ['required_unless:settlement_type,deferred', 'prohibited_if:settlement_type,deferred', 'array', 'min:1', 'max:3'],
+            'payments.*.payment_method' => ['required_with:payments', 'string', 'distinct', Rule::in(['cash', 'card', 'wallet'])],
+            'payments.*.amount' => ['required_with:payments', 'numeric', 'min:0', 'decimal:0,2'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
+        $validated['settlement_type'] ??= 'immediate';
 
         $invoice = $invoiceService->create($validated, $request->user()->id);
 
@@ -45,6 +49,7 @@ class InvoiceController extends Controller
             'word' => ['nullable', 'string', 'max:255'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'status' => ['nullable', Rule::enum(InvoiceStatusEnum::class)],
             'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
@@ -60,6 +65,7 @@ class InvoiceController extends Controller
                     ->orWhere('customer_name', 'like', "%$word%")
                     ->orWhere('customer_phone', 'like', "%$word%"));
             })
+            ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->when($validated['date_from'] ?? null, function ($query, $date) {
                 [$start] = BusinessDay::range($date);
 
@@ -70,7 +76,7 @@ class InvoiceController extends Controller
 
                 $query->where('paid_at', '<', $end);
             })
-            ->latest('paid_at')
+            ->latest('created_at')
             ->paginate($validated['limit'] ?? 20);
 
         return response()->json(['status' => 200, 'message' => 'Invoices fetched successfully', 'data' => $invoices]);
@@ -101,6 +107,25 @@ class InvoiceController extends Controller
         );
 
         return response()->json(['status' => 200, 'message' => 'Invoice fetched successfully', 'data' => $invoice]);
+    }
+
+    public function collectPayment(Request $request, InvoicePaymentService $invoicePaymentService)
+    {
+        $validated = $request->validate([
+            'invoice_id' => ['required', 'integer', 'exists:invoices,id'],
+            'payments' => ['required', 'array', 'min:1', 'max:3'],
+            'payments.*.payment_method' => ['required', 'string', 'distinct', Rule::in(['cash', 'card', 'wallet'])],
+            'payments.*.amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2'],
+        ]);
+
+        $invoice = Invoice::query()->findOrFail($validated['invoice_id']);
+        $invoice = $invoicePaymentService->collect($invoice, $validated['payments']);
+
+        return response()->json([
+            'status' => 200,
+            'message' => 'تم تسجيل الدفعة بنجاح',
+            'data' => $invoice,
+        ]);
     }
 
     public function barberSalesReport(Request $request)

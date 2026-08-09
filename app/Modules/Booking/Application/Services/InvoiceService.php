@@ -4,6 +4,7 @@ namespace App\Modules\Booking\Application\Services;
 
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Booking\Domain\Enums\BookingStatusEnum;
+use App\Modules\Booking\Domain\Enums\InvoiceStatusEnum;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
 use App\Modules\Booking\Infrastructure\Persistence\Models\SalonCustomer\SalonCustomer;
@@ -15,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class InvoiceService
 {
+    public function __construct(private InvoicePaymentService $invoicePaymentService) {}
+
     public function create(array $invoiceInput, int $cashierId): Invoice
     {
         return DB::transaction(function () use ($invoiceInput, $cashierId) {
@@ -31,14 +34,16 @@ class InvoiceService
                 throw ValidationException::withMessages(['items' => 'يجب إضافة بند واحد على الأقل للفاتورة.']);
             }
             $totals = $this->invoiceTotals($items, (float) ($invoiceInput['discount'] ?? 0));
-            $paymentRows = $this->paymentRows($invoiceInput['payments'], $totals['total_cents'], $booking);
+            $paymentRows = $this->initialPaymentRows($invoiceInput, $totals['total_cents'], $booking);
+            $status = $this->invoicePaymentService->statusFor($totals['total_cents'], $paymentRows);
             $invoice = Invoice::create($this->invoiceAttributes(
                 $invoiceInput,
                 $booking,
                 $barber->id,
                 $cashierId,
                 $totals,
-                $paymentRows
+                $paymentRows,
+                $status
             ));
 
             $invoice->update(['invoice_number' => 'KR-'.now()->format('Ymd').'-'.str_pad((string) $invoice->id, 6, '0', STR_PAD_LEFT)]);
@@ -81,7 +86,8 @@ class InvoiceService
         int $barberId,
         int $cashierId,
         array $totals,
-        array $paymentRows
+        array $paymentRows,
+        InvoiceStatusEnum $status
     ): array {
         return [
             'booking_id' => $booking?->id,
@@ -93,9 +99,10 @@ class InvoiceService
             'subtotal' => $totals['subtotal'],
             'discount' => $totals['discount'],
             'total' => $totals['total'],
-            'payment_method' => $paymentRows[0]['payment_method'],
+            'payment_method' => $paymentRows[0]['payment_method'] ?? 'cash',
+            'status' => $status->value,
             'notes' => $invoiceInput['notes'] ?? null,
-            'paid_at' => now(),
+            'paid_at' => $status === InvoiceStatusEnum::PAID ? now() : null,
         ];
     }
 
@@ -119,53 +126,17 @@ class InvoiceService
         return SalonCustomer::query()->where('normalized_phone', $normalizedPhone)->firstOrFail();
     }
 
-    private function paymentRows(array $payments, int $totalCents, ?Booking $booking): array
+    private function initialPaymentRows(array $invoiceInput, int $totalCents, ?Booking $booking): array
     {
-        $rows = array_map(fn (array $payment) => [
-            'payment_method' => $payment['payment_method'],
-            'amount_cents' => (int) round((float) $payment['amount'] * 100),
-        ], $payments);
-
-        if (array_sum(array_column($rows, 'amount_cents')) !== $totalCents) {
-            throw ValidationException::withMessages([
-                'payments' => 'يجب أن يساوي مجموع مبالغ الدفع إجمالي الفاتورة بالضبط.',
-            ]);
+        if (($invoiceInput['settlement_type'] ?? 'immediate') === 'deferred') {
+            return $this->invoicePaymentService->deferredRows($booking, $totalCents);
         }
 
-        if ($totalCents > 0 && collect($rows)->contains(fn (array $row) => $row['amount_cents'] <= 0)) {
-            throw ValidationException::withMessages([
-                'payments' => 'يجب أن يكون مبلغ كل طريقة دفع أكبر من صفر.',
-            ]);
-        }
-
-        if ($totalCents === 0 && count($rows) !== 1) {
-            throw ValidationException::withMessages([
-                'payments' => 'الفاتورة المجانية تقبل طريقة دفع واحدة فقط بمبلغ صفر.',
-            ]);
-        }
-
-        $this->assertDepositCovered($booking, $rows, $totalCents);
-
-        return array_map(fn (array $row) => [
-            'payment_method' => $row['payment_method'],
-            'amount' => $row['amount_cents'] / 100,
-        ], $rows);
-    }
-
-    private function assertDepositCovered(?Booking $booking, array $paymentRows, int $totalCents): void
-    {
-        if ($booking?->deposit === null) {
-            return;
-        }
-
-        $depositCents = (int) round((float) $booking->deposit->amount * 100);
-        $methodAmountCents = collect($paymentRows)
-            ->firstWhere('payment_method', $booking->deposit->payment_method)['amount_cents'] ?? 0;
-        if ($depositCents > $totalCents || $methodAmountCents < $depositCents) {
-            throw ValidationException::withMessages([
-                'payments' => 'يجب احتساب الديبوزيت المحصل ضمن مدفوعات الفاتورة.',
-            ]);
-        }
+        return $this->invoicePaymentService->immediateRows(
+            $invoiceInput['payments'],
+            $totalCents,
+            $booking
+        );
     }
 
     private function resolveBarber(?Booking $booking, ?int $requestedBarberId): Employee
@@ -237,12 +208,14 @@ class InvoiceService
             $serviceId = isset($item['service_id']) ? (int) $item['service_id'] : null;
             if ($serviceId && ($remainingBookedServices[$serviceId] ?? 0) > 0) {
                 $remainingBookedServices[$serviceId]--;
+
                 return false;
             }
 
             $packageId = isset($item['package_id']) ? (int) $item['package_id'] : null;
             if ($packageId && ($remainingBookedPackages[$packageId] ?? 0) > 0) {
                 $remainingBookedPackages[$packageId]--;
+
                 return false;
             }
 
