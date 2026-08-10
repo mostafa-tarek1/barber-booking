@@ -26,6 +26,10 @@ return [
         'http://127.0.0.1:5173',
         'http://localhost:8080',
         'http://127.0.0.1:8080',
+        'https://krimasalon.com',
+        'https://www.krimasalon.com',
+        'https://admin.krimasalon.com',
+        'https://dashboard.krimasalon.com',
         env('FRONTEND_URL'),
     ]),
 
