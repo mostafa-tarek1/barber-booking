@@ -5,12 +5,10 @@ namespace App\Modules\Notification\Application\Listeners;
 use App\Modules\Notification\Application\Events\BookingCreated;
 use App\Modules\Notification\Application\Services\NotificationService;
 use App\Modules\Notification\Domain\Enums\NotificationTypeEnum;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\Log;
 
 class SendBookingCreatedNotification
 {
-
     protected NotificationService $notificationService;
 
     /**
@@ -36,25 +34,7 @@ class SendBookingCreatedNotification
             $title = 'حجز جديد';
             $message = "تم إنشاء حجز جديد من العميل {$booking->name} لخدمة {$serviceNames} في {$booking->date->format('Y-m-d')} الساعة {$booking->from_hour}";
 
-            // إرسال إشعار للموظف
-            $this->notificationService->sendToEmployee(
-                $employeeId,
-                NotificationTypeEnum::BOOKING_CREATED,
-                $title,
-                $message,
-                [
-                    'booking_id' => $booking->id,
-                    'customer_name' => $booking->name,
-                    'customer_phone' => $booking->phone,
-                    'customer_email' => $booking->email,
-                    'service_names' => $serviceNames,
-                    'date' => $booking->date->format('Y-m-d'),
-                    'time' => $booking->from_hour,
-                    'duration' => $booking->to_hour,
-                ]
-            );
-
-            // إرسال إشعار للمديرين
+            // كل الموظفين النشطين يتضمنون المصفف المسؤول؛ إرسال منفصل له كان يكرر الإشعار.
             $this->notificationService->sendToAllEmployees(
                 NotificationTypeEnum::BOOKING_CREATED,
                 $title,
@@ -73,9 +53,9 @@ class SendBookingCreatedNotification
             );
 
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Failed to send booking created notification: ' . $e->getMessage(), [
+            Log::error('Failed to send booking created notification: '.$e->getMessage(), [
                 'booking_id' => $event->booking->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
     }

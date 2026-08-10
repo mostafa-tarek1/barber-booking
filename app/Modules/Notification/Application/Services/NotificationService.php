@@ -2,11 +2,11 @@
 
 namespace App\Modules\Notification\Application\Services;
 
-use App\Modules\Notification\Domain\Enums\NotificationTypeEnum;
-use App\Modules\Notification\Infrastructure\Persistence\Models\Notification\Notification;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Customer\User;
-use Illuminate\Support\Facades\DB;
+use App\Modules\Notification\Application\Events\RealtimeNotificationCreated;
+use App\Modules\Notification\Domain\Enums\NotificationTypeEnum;
+use App\Modules\Notification\Infrastructure\Persistence\Models\Notification\Notification;
 use Illuminate\Support\Facades\Log;
 
 class NotificationService
@@ -28,7 +28,7 @@ class NotificationService
             'title' => $title,
             'message' => $message,
             'data' => $data,
-            'created_by' => $createdBy
+            'created_by' => $createdBy,
         ]);
     }
 
@@ -49,7 +49,7 @@ class NotificationService
             'title' => $title,
             'message' => $message,
             'data' => $data,
-            'created_by' => $createdBy
+            'created_by' => $createdBy,
         ]);
     }
 
@@ -129,11 +129,17 @@ class NotificationService
     private function createNotification(array $data): Notification
     {
         try {
-            return Notification::create($data);
+            $notification = Notification::create($data);
+
+            if ($notification->employee_id !== null) {
+                RealtimeNotificationCreated::dispatch($notification);
+            }
+
+            return $notification;
         } catch (\Exception $e) {
-            Log::error('Failed to create notification: ' . $e->getMessage(), [
+            Log::error('Failed to create notification: '.$e->getMessage(), [
                 'data' => $data,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
             throw $e;
         }
@@ -146,11 +152,12 @@ class NotificationService
     {
         $notification = Notification::find($notificationId);
 
-        if (!$notification) {
+        if (! $notification) {
             return false;
         }
 
         $notification->markAsRead();
+
         return true;
     }
 
@@ -161,11 +168,12 @@ class NotificationService
     {
         $notification = Notification::find($notificationId);
 
-        if (!$notification) {
+        if (! $notification) {
             return false;
         }
 
         $notification->markAsUnread();
+
         return true;
     }
 
@@ -196,7 +204,7 @@ class NotificationService
     {
         $notification = Notification::find($notificationId);
 
-        if (!$notification) {
+        if (! $notification) {
             return false;
         }
 
@@ -351,7 +359,7 @@ class NotificationService
             'date' => $date,
             'time' => $time,
             'minutes_before' => $minutesBefore,
-            'reminder_type' => 'booking'
+            'reminder_type' => 'booking',
         ];
 
         return $this->sendToEmployee(
