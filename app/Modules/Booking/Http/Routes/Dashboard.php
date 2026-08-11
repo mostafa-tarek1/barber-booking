@@ -3,6 +3,7 @@
 use App\Modules\Booking\Http\Controllers\Dashboard\Booking\BookingController;
 use App\Modules\Booking\Http\Controllers\Dashboard\Invoice\InvoiceController;
 use App\Modules\Booking\Http\Controllers\Dashboard\SalonCustomer\SalonCustomerController;
+use App\Modules\Booking\Http\Controllers\Dashboard\BookingReview\BookingReviewController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('dashboard')->group(function () {
@@ -30,6 +31,9 @@ Route::prefix('dashboard')->group(function () {
         });
 
         Route::middleware('employeeRole:admin,super_admin')->group(function () {
+            Route::post('fetch_booking_reviews', [BookingReviewController::class, 'index']);
+            Route::post('update_booking_review_status', [BookingReviewController::class, 'updateStatus']);
+            Route::post('delete_booking_review', [BookingReviewController::class, 'destroy']);
             Route::post('create_barber_time_off', [BookingController::class, 'createTimeOff']);
             Route::post('delete_barber_time_off', [BookingController::class, 'deleteTimeOff']);
             Route::post('fetch_barber_working_hours', [BookingController::class, 'fetchWorkingHours']);
