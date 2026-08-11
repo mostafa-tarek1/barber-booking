@@ -105,7 +105,11 @@ class BookingUseCase
                         'services.translations',
                         'packages.translations',
                         'deposit',
-                        'employee:id,first_name,last_name',
+                        'employee' => fn ($query) => $query->select([
+                            'employees.id',
+                            'employees.first_name',
+                            'employees.last_name',
+                        ]),
                         'createdBy',
                         'updatedBy',
                     ]
