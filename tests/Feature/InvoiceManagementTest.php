@@ -6,6 +6,7 @@ use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Booking\Domain\Enums\BookingStatusEnum;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -127,6 +128,29 @@ class InvoiceManagementTest extends TestCase
         ];
     }
 
+    public function test_cashier_barber_sales_report_is_limited_to_current_business_day(): void
+    {
+        $this->travelTo(Carbon::parse('2026-08-11 12:00:00', 'Africa/Cairo'));
+        $cashier = $this->employee('كاشير', 'employee');
+        $barber = $this->employee('مصفف', 'barber');
+        $this->invoice($cashier, $barber, null, ['total' => 120, 'paid_at' => '2026-08-11 08:00:00']);
+        $this->invoice($cashier, $barber, null, ['total' => 80, 'paid_at' => '2026-08-12 02:00:00']);
+        $this->invoice($cashier, $barber, null, ['total' => 500, 'paid_at' => '2026-08-10 12:00:00']);
+
+        $response = $this->actingAs($cashier, 'employee')
+            ->postJson('/dashboard/fetch_barber_sales_report', [
+                'date_from' => '2026-08-01',
+                'date_to' => '2026-08-31',
+            ])
+            ->assertSuccessful();
+
+        $barberSales = collect($response->json('data'))->firstWhere('id', $barber->id);
+
+        $this->assertNotNull($barberSales);
+        $this->assertSame(2, (int) $barberSales['clients_count']);
+        $this->assertSame(200.0, (float) $barberSales['total_sales']);
+    }
+
     private function employee(string $firstName, string $role): Employee
     {
         return Employee::query()->create([
@@ -136,9 +160,9 @@ class InvoiceManagementTest extends TestCase
         ]);
     }
 
-    private function invoice(Employee $cashier, Employee $barber, ?Booking $booking = null): Invoice
+    private function invoice(Employee $cashier, Employee $barber, ?Booking $booking = null, array $attributes = []): Invoice
     {
-        return Invoice::query()->create([
+        return Invoice::query()->create(array_merge([
             'booking_id' => $booking?->id,
             'customer_name' => 'عميل اختبار',
             'cashier_id' => $cashier->id,
@@ -149,7 +173,7 @@ class InvoiceManagementTest extends TestCase
             'payment_method' => 'cash',
             'status' => 'paid',
             'paid_at' => now(),
-        ]);
+        ], $attributes));
     }
 
     private function invoiceItem(): array

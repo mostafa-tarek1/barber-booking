@@ -16,10 +16,10 @@ Route::prefix('dashboard')->group(function () {
         Route::post('fetch_invoices', [InvoiceController::class, 'index']);
         Route::post('fetch_invoice_details', [InvoiceController::class, 'show']);
 
-        Route::middleware('employeeRole:admin,super_admin,barber')->group(function () {
-            Route::post('fetch_barber_time_offs', [BookingController::class, 'fetchTimeOffs']);
-            Route::post('fetch_barber_sales_report', [InvoiceController::class, 'barberSalesReport']);
-        });
+        Route::post('fetch_barber_time_offs', [BookingController::class, 'fetchTimeOffs'])
+            ->middleware('employeeRole:admin,super_admin,barber');
+        Route::post('fetch_barber_sales_report', [InvoiceController::class, 'barberSalesReport'])
+            ->middleware('employeeRole:admin,super_admin,employee,barber');
 
         Route::middleware('employeeRole:admin,super_admin,employee')->group(function () {
             Route::post('fetch_salon_customers', [SalonCustomerController::class, 'index']);

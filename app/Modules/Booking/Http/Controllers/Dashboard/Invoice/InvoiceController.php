@@ -174,6 +174,10 @@ class InvoiceController extends Controller
         if ($request->user()->employee_type === 'barber') {
             $validated['barber_id'] = $request->user()->id;
         }
+        if ($request->user()->employee_type === 'employee') {
+            $validated['date_from'] = BusinessDay::currentDate();
+            $validated['date_to'] = BusinessDay::currentDate();
+        }
 
         $report = Employee::query()
             ->where('employee_type', 'barber')
