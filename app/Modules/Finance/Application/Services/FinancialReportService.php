@@ -15,10 +15,29 @@ class FinancialReportService
     public function report(array $filters): array
     {
         [$dateFrom, $dateTo] = $this->selectedDates($filters);
+        $selectedSummary = $this->summaryFor($dateFrom, $dateTo);
 
+        return $this->reportDetails($dateFrom, $dateTo, $this->currentPeriodSummaries(), $selectedSummary);
+    }
+
+    public function todayReport(): array
+    {
+        $currentBusinessDate = BusinessDay::currentDate();
+        $todaySummary = $this->summaryFor($currentBusinessDate, $currentBusinessDate);
+
+        return $this->reportDetails(
+            $currentBusinessDate,
+            $currentBusinessDate,
+            ['today' => $todaySummary],
+            $todaySummary
+        );
+    }
+
+    private function reportDetails(string $dateFrom, string $dateTo, array $periods, array $selectedSummary): array
+    {
         return [
-            'periods' => $this->currentPeriodSummaries(),
-            'selected_period' => $this->summaryFor($dateFrom, $dateTo),
+            'periods' => $periods,
+            'selected_period' => $selectedSummary,
             'daily_activity' => $this->dailyActivity($dateFrom, $dateTo),
             'category_breakdown' => $this->categoryBreakdown($dateFrom, $dateTo),
             'category_options' => ExpenseCategoryEnum::options(),

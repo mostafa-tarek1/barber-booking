@@ -10,15 +10,17 @@ use App\Modules\Finance\Http\Requests\Expense\StoreExpenseRequest;
 use App\Modules\Finance\Http\Requests\Expense\UpdateExpenseRequest;
 use App\Modules\Finance\Http\Resources\Expense\ExpenseResource;
 use App\Modules\Finance\Infrastructure\Persistence\Models\Expense\Expense;
+use App\Support\BusinessDay;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class ExpenseController extends Controller
 {
     public function index(FetchExpensesRequest $request): JsonResponse
     {
-        $filters = $request->validated();
+        $filters = $this->visibleExpenseFilters($request, $request->validated());
         $expenses = $this->filteredExpenses($filters)
             ->latest('expense_date')
             ->latest('id')
@@ -38,6 +40,7 @@ class ExpenseController extends Controller
 
     public function store(StoreExpenseRequest $request): JsonResponse
     {
+        $this->ensureCashierExpenseIsForToday($request);
         $expense = Expense::query()->create([
             ...$request->validated(),
             'created_by' => $request->user()->id,
@@ -77,11 +80,40 @@ class ExpenseController extends Controller
 
     public function report(FinancialReportRequest $request, FinancialReportService $reportService): JsonResponse
     {
+        $financialReport = $this->isCashier($request)
+            ? $reportService->todayReport()
+            : $reportService->report($request->validated());
+
         return response()->json([
             'status' => 200,
             'message' => 'تم جلب التقرير المالي بنجاح',
-            'data' => $reportService->report($request->validated()),
+            'data' => $financialReport,
         ]);
+    }
+
+    private function visibleExpenseFilters(Request $request, array $filters): array
+    {
+        if (! $this->isCashier($request)) {
+            return $filters;
+        }
+
+        $currentBusinessDate = BusinessDay::currentDate();
+
+        return [...$filters, 'date_from' => $currentBusinessDate, 'date_to' => $currentBusinessDate];
+    }
+
+    private function ensureCashierExpenseIsForToday(StoreExpenseRequest $request): void
+    {
+        if ($this->isCashier($request) && $request->validated('expense_date') !== BusinessDay::currentDate()) {
+            throw ValidationException::withMessages([
+                'expense_date' => 'حساب الكاشير يمكنه تسجيل مصروفات يوم العمل الحالي فقط.',
+            ]);
+        }
+    }
+
+    private function isCashier(Request $request): bool
+    {
+        return $request->user()->employee_type === 'employee';
     }
 
     private function filteredExpenses(array $filters): Builder

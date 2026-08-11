@@ -9,6 +9,7 @@ use App\Modules\Finance\Infrastructure\Persistence\Models\Expense\Expense;
 use App\Modules\Statistics\Application\UseCases\Statistics\StatisticsUseCase;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ExpenseFinancialReportTest extends TestCase
@@ -89,6 +90,103 @@ class ExpenseFinancialReportTest extends TestCase
 
         $this->assertFinancialSummary($report['selected_period'], 500, 100, 400);
         $this->assertSame('2026-08-10', $report['daily_activity'][0]['date']);
+    }
+
+    public function test_cashier_financial_access_is_limited_to_current_business_day(): void
+    {
+        $this->travelTo(Carbon::parse('2026-08-11 12:00:00', 'Africa/Cairo'));
+        $cashier = $this->employee('كاشير', 'employee');
+        $this->paidInvoice($cashier, 1000, '2026-08-11 14:00:00');
+        $this->paidInvoice($cashier, 500, '2026-08-10 14:00:00');
+        $this->expense(100, 'supplies', '2026-08-11', 'مناديل اليوم');
+        $this->expense(200, 'internet', '2026-08-10', 'إنترنت أمس');
+
+        $reportResponse = $this->actingAs($cashier, 'employee')->postJson('/dashboard/fetch_financial_report', [
+            'date_from' => '2026-08-01',
+            'date_to' => '2026-08-11',
+        ]);
+        $reportResponse
+            ->assertSuccessful()
+            ->assertJsonPath('data.selected_period.date_from', '2026-08-11')
+            ->assertJsonPath('data.selected_period.revenue', 1000)
+            ->assertJsonPath('data.selected_period.expenses', 100)
+            ->assertJsonPath('data.selected_period.net_profit', 900)
+            ->assertJsonMissingPath('data.periods.week')
+            ->assertJsonMissingPath('data.periods.month');
+
+        $expenseResponse = $this->actingAs($cashier, 'employee')->postJson('/dashboard/fetch_expenses', [
+            'date_from' => '2026-08-10',
+            'date_to' => '2026-08-10',
+        ]);
+        $expenseResponse
+            ->assertSuccessful()
+            ->assertJsonCount(1, 'data.expenses')
+            ->assertJsonPath('data.expenses.0.description', 'مناديل اليوم');
+    }
+
+    #[DataProvider('cashierExpenseDates')]
+    public function test_cashier_expense_date_is_limited_to_current_business_day(
+        string $expenseDate,
+        int $expectedStatus,
+        int $expectedExpenseCount
+    ): void {
+        $this->travelTo(Carbon::parse('2026-08-11 12:00:00', 'Africa/Cairo'));
+        $cashier = $this->employee('كاشير', 'employee');
+
+        $response = $this->actingAs($cashier, 'employee')->postJson('/dashboard/create_expense', [
+            'category' => 'electricity',
+            'description' => 'شحن الكهرباء',
+            'amount' => 200,
+            'expense_date' => $expenseDate,
+        ]);
+
+        $response->assertStatus($expectedStatus);
+        $this->assertDatabaseCount('expenses', $expectedExpenseCount);
+    }
+
+    #[DataProvider('cashierModificationRequests')]
+    public function test_cashier_cannot_modify_recorded_expenses(string $endpoint, array $requestAttributes): void
+    {
+        $this->travelTo(Carbon::parse('2026-08-11 12:00:00', 'Africa/Cairo'));
+        $cashier = $this->employee('كاشير', 'employee');
+        $expense = Expense::query()->create([
+            'category' => 'meals',
+            'description' => 'فطار الفريق',
+            'amount' => 50,
+            'expense_date' => '2026-08-11',
+            'created_by' => $cashier->id,
+        ]);
+
+        $this->actingAs($cashier, 'employee')
+            ->postJson("/dashboard/{$endpoint}", ['expense_id' => $expense->id, ...$requestAttributes])
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('expenses', [
+            'id' => $expense->id,
+            'description' => 'فطار الفريق',
+            'amount' => 50,
+        ]);
+    }
+
+    public static function cashierExpenseDates(): array
+    {
+        return [
+            'current business day' => ['2026-08-11', 201, 1],
+            'previous business day' => ['2026-08-10', 422, 0],
+        ];
+    }
+
+    public static function cashierModificationRequests(): array
+    {
+        return [
+            'update' => ['update_expense', [
+                'category' => 'meals',
+                'description' => 'وصف معدل',
+                'amount' => 60,
+                'expense_date' => '2026-08-11',
+            ]],
+            'delete' => ['delete_expense', []],
+        ];
     }
 
     private function employee(string $firstName, string $type): Employee

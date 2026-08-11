@@ -21,6 +21,26 @@ class PublicBookingFlowTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_public_barber_catalog_excludes_cashier_accounts(): void
+    {
+        $barber = Employee::query()->create([
+            'first_name' => 'مصفف',
+            'employee_type' => 'barber',
+            'status' => 'active',
+        ]);
+        Employee::query()->create([
+            'first_name' => 'كاشير',
+            'employee_type' => 'employee',
+            'status' => 'active',
+        ]);
+
+        $barberIds = $this->getJson('/api/barbers')
+            ->assertSuccessful()
+            ->json('data.*.id');
+
+        $this->assertSame([$barber->id], $barberIds);
+    }
+
     public function test_public_booking_is_confirmed_without_expiration(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-08-10 12:00', 'Africa/Cairo'));
