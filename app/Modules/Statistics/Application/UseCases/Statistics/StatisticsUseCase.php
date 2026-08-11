@@ -8,6 +8,7 @@ use App\Modules\Base\Application\Response\DataStatus;
 use App\Modules\Base\Application\Response\DataSuccess;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
+use App\Modules\Finance\Infrastructure\Persistence\Models\Expense\Expense;
 use App\Support\BusinessDay;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -20,13 +21,17 @@ class StatisticsUseCase
             $today = now('Africa/Cairo')->toDateString();
             $salesDate = BusinessDay::currentDate();
             $todayRange = BusinessDay::range($salesDate);
+            $todayRevenue = $this->paidRevenueBetween(...$todayRange);
+            $todayExpenses = (float) Expense::query()->whereDate('expense_date', $salesDate)->sum('amount');
 
             return new DataSuccess([
                 'total_bookings' => Booking::query()->count(),
                 'total_revenue' => (float) Invoice::query()->where('status', 'paid')->sum('total'),
                 'total_employees' => Employee::query()->where('employee_type', 'barber')->where('status', 'active')->count(),
                 'today_bookings' => Booking::query()->whereDate('date', $today)->count(),
-                'today_revenue' => $this->paidRevenueBetween(...$todayRange),
+                'today_revenue' => $todayRevenue,
+                'today_expenses' => $todayExpenses,
+                'today_net_profit' => $todayRevenue - $todayExpenses,
                 'total_paid_invoices' => Invoice::query()->where('status', 'paid')->count(),
             ], message: 'تم جلب الإحصائيات بنجاح');
         } catch (\Throwable $exception) {
