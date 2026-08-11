@@ -128,6 +128,42 @@ class InvoiceController extends Controller
         ]);
     }
 
+    public function update(Request $request, InvoiceService $invoiceService)
+    {
+        $validated = $request->validate([
+            'invoice_id' => ['required', 'integer', 'exists:invoices,id'],
+            'barber_id' => ['required', 'integer', 'exists:employees,id'],
+            'customer_name' => ['required', 'string', 'max:255'],
+            'customer_phone' => ['nullable', 'string', 'max:30'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.service_id' => ['nullable', 'integer', 'exists:services,id'],
+            'items.*.package_id' => ['nullable', 'integer', 'exists:packages,id'],
+            'items.*.description' => ['required', 'string', 'max:255'],
+            'items.*.unit_price' => ['required', 'numeric', 'min:0'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:99'],
+            'discount' => ['required', 'numeric', 'min:0'],
+            'payments' => ['present', 'array', 'max:3'],
+            'payments.*.payment_method' => ['required', 'string', 'distinct', Rule::in(['cash', 'card', 'wallet'])],
+            'payments.*.amount' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $invoice = $invoiceService->update($validated['invoice_id'], $validated);
+
+        return response()->json(['status' => 200, 'message' => 'تم تعديل الفاتورة بنجاح', 'data' => $invoice]);
+    }
+
+    public function destroy(Request $request, InvoiceService $invoiceService)
+    {
+        $validated = $request->validate([
+            'invoice_id' => ['required', 'integer', 'exists:invoices,id'],
+        ]);
+
+        $invoiceService->delete($validated['invoice_id'], $request->user()->id);
+
+        return response()->json(['status' => 200, 'message' => 'تم حذف الفاتورة ومتعلقاتها بنجاح', 'data' => true]);
+    }
+
     public function barberSalesReport(Request $request)
     {
         $validated = $request->validate([

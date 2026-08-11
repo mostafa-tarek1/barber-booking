@@ -44,6 +44,22 @@ class InvoicePaymentService
         ]];
     }
 
+    public function replacementRows(array $payments, int $totalCents, ?Booking $booking): array
+    {
+        $paymentRows = $this->normalizedRows($payments);
+        if ($paymentRows === []) {
+            $this->assertDepositCovered($booking, $paymentRows, $totalCents);
+
+            return [];
+        }
+
+        $this->assertImmediateAmounts($paymentRows, $totalCents);
+        $this->assertWithinRemainingBalance($this->totalCents($paymentRows), $totalCents);
+        $this->assertDepositCovered($booking, $paymentRows, $totalCents);
+
+        return $this->monetaryRows($paymentRows);
+    }
+
     public function collect(Invoice $invoice, array $payments): Invoice
     {
         return DB::transaction(function () use ($invoice, $payments) {

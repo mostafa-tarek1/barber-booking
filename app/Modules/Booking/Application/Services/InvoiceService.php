@@ -10,17 +10,22 @@ use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
 use App\Modules\Booking\Infrastructure\Persistence\Models\SalonCustomer\SalonCustomer;
 use App\Modules\Service\Infrastructure\Persistence\Models\Package\Package;
 use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
+use App\Modules\Statistics\Application\Services\StatisticsCacheService;
 use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class InvoiceService
 {
-    public function __construct(private InvoicePaymentService $invoicePaymentService) {}
+    public function __construct(
+        private InvoicePaymentService $invoicePaymentService,
+        private BookingCacheService $bookingCacheService,
+        private StatisticsCacheService $statisticsCacheService,
+    ) {}
 
     public function create(array $invoiceInput, int $cashierId): Invoice
     {
-        return DB::transaction(function () use ($invoiceInput, $cashierId) {
+        $invoice = DB::transaction(function () use ($invoiceInput, $cashierId) {
             $booking = $this->lockedBooking($invoiceInput['booking_id'] ?? null);
             $salonCustomer = $this->salonCustomer($booking, $invoiceInput);
             $invoiceInput['salon_customer_id'] = $salonCustomer?->id;
@@ -36,30 +41,82 @@ class InvoiceService
             $totals = $this->invoiceTotals($items, (float) ($invoiceInput['discount'] ?? 0));
             $paymentRows = $this->initialPaymentRows($invoiceInput, $totals['total_cents'], $booking);
             $status = $this->invoicePaymentService->statusFor($totals['total_cents'], $paymentRows);
-            $invoice = Invoice::create($this->invoiceAttributes(
-                $invoiceInput,
-                $booking,
-                $barber->id,
-                $cashierId,
-                $totals,
-                $paymentRows,
-                $status
-            ));
+            $invoice = Invoice::create($this->invoiceAttributes($invoiceInput, [
+                'booking' => $booking,
+                'barber_id' => $barber->id,
+                'cashier_id' => $cashierId,
+                'totals' => $totals,
+                'payment_rows' => $paymentRows,
+                'status' => $status,
+            ]));
 
             $invoice->update(['invoice_number' => 'KR-'.now()->format('Ymd').'-'.str_pad((string) $invoice->id, 6, '0', STR_PAD_LEFT)]);
             $invoice->items()->createMany($this->invoiceItemRows($items));
             $invoice->payments()->createMany($paymentRows);
             $booking?->update(['status' => BookingStatusEnum::FINISHED->value, 'updated_by' => $cashierId]);
 
-            return $invoice->load([
-                'items',
-                'payments',
-                'salonCustomer',
-                'booking:id,date,from_hour,to_hour',
-                'cashier:id,first_name,last_name',
-                'barber:id,first_name,last_name',
-            ]);
+            return $invoice->load($this->invoiceRelations());
         });
+
+        $this->bookingCacheService->clearBookingCache();
+        $this->statisticsCacheService->clearAllStatisticsCache();
+
+        return $invoice;
+    }
+
+    public function update(int $invoiceId, array $invoiceInput): Invoice
+    {
+        $invoice = DB::transaction(function () use ($invoiceId, $invoiceInput) {
+            $invoice = $this->lockedInvoice($invoiceId);
+            $this->replaceInvoice($invoice, $invoiceInput, $this->invoiceReplacement($invoice, $invoiceInput));
+
+            return $invoice->load($this->invoiceRelations());
+        });
+
+        $this->statisticsCacheService->clearAllStatisticsCache();
+
+        return $invoice;
+    }
+
+    public function delete(int $invoiceId, int $updatedBy): void
+    {
+        DB::transaction(function () use ($invoiceId, $updatedBy) {
+            $invoice = $this->lockedInvoice($invoiceId);
+            $booking = $invoice->booking;
+
+            $invoice->delete();
+
+            if ($booking && (int) $booking->status === BookingStatusEnum::FINISHED->value) {
+                $booking->update([
+                    'status' => BookingStatusEnum::CONFIRMED->value,
+                    'updated_by' => $updatedBy,
+                    'expires_at' => null,
+                ]);
+            }
+        });
+
+        $this->bookingCacheService->clearBookingCache();
+        $this->statisticsCacheService->clearAllStatisticsCache();
+    }
+
+    private function invoiceReplacement(Invoice $invoice, array $invoiceInput): array
+    {
+        $barber = $this->resolveBarber($invoice->booking, $invoiceInput['barber_id']);
+        $replacementItems = $this->replacementItems($invoiceInput['items'], $barber->id);
+        $totals = $this->invoiceTotals($replacementItems, (float) $invoiceInput['discount']);
+        $paymentRows = $this->invoicePaymentService->replacementRows(
+            $invoiceInput['payments'],
+            $totals['total_cents'],
+            $invoice->booking,
+        );
+
+        return [
+            'barber_id' => $barber->id,
+            'items' => $replacementItems,
+            'totals' => $totals,
+            'payment_rows' => $paymentRows,
+            'status' => $this->invoicePaymentService->statusFor($totals['total_cents'], $paymentRows),
+        ];
     }
 
     private function invoiceTotals(array $items, float $discount): array
@@ -80,22 +137,20 @@ class InvoiceService
         ];
     }
 
-    private function invoiceAttributes(
-        array $invoiceInput,
-        ?Booking $booking,
-        int $barberId,
-        int $cashierId,
-        array $totals,
-        array $paymentRows,
-        InvoiceStatusEnum $status
-    ): array {
+    private function invoiceAttributes(array $invoiceInput, array $invoiceCreation): array
+    {
+        $booking = $invoiceCreation['booking'];
+        $totals = $invoiceCreation['totals'];
+        $paymentRows = $invoiceCreation['payment_rows'];
+        $status = $invoiceCreation['status'];
+
         return [
             'booking_id' => $booking?->id,
             'salon_customer_id' => $invoiceInput['salon_customer_id'],
             'customer_name' => $booking?->name ?? $invoiceInput['customer_name'],
             'customer_phone' => $booking?->phone ?? ($invoiceInput['customer_phone'] ?? null),
-            'cashier_id' => $cashierId,
-            'barber_id' => $barberId,
+            'cashier_id' => $invoiceCreation['cashier_id'],
+            'barber_id' => $invoiceCreation['barber_id'],
             'subtotal' => $totals['subtotal'],
             'discount' => $totals['discount'],
             'total' => $totals['total'],
@@ -137,6 +192,79 @@ class InvoiceService
             $totalCents,
             $booking
         );
+    }
+
+    private function lockedInvoice(int $invoiceId): Invoice
+    {
+        $invoice = Invoice::query()->lockForUpdate()->findOrFail($invoiceId);
+        $booking = $invoice->booking()
+            ->with(['services', 'deposit'])
+            ->lockForUpdate()
+            ->first();
+        $invoice->setRelation('booking', $booking);
+
+        return $invoice;
+    }
+
+    private function replacementItems(array $invoiceItems, int $barberId): array
+    {
+        return collect($invoiceItems)->map(function (array $invoiceItem) use ($barberId) {
+            $unitPriceCents = (int) round((float) $invoiceItem['unit_price'] * 100);
+            $quantity = (int) $invoiceItem['quantity'];
+
+            return [
+                'service_id' => $invoiceItem['service_id'] ?? null,
+                'package_id' => $invoiceItem['package_id'] ?? null,
+                'employee_id' => $barberId,
+                'description' => trim($invoiceItem['description']),
+                'quantity' => $quantity,
+                'unit_price_cents' => $unitPriceCents,
+                'total_cents' => $unitPriceCents * $quantity,
+            ];
+        })->all();
+    }
+
+    private function replaceInvoice(
+        Invoice $invoice,
+        array $invoiceInput,
+        array $invoiceReplacement,
+    ): void {
+        $salonCustomer = $this->salonCustomer(null, $invoiceInput);
+        $invoice->update($this->replacementAttributes(
+            $invoice,
+            $invoiceInput,
+            $salonCustomer?->id,
+            $invoiceReplacement,
+        ));
+        $invoice->items()->delete();
+        $invoice->payments()->delete();
+        $invoice->items()->createMany($this->invoiceItemRows($invoiceReplacement['items']));
+        $invoice->payments()->createMany($invoiceReplacement['payment_rows']);
+    }
+
+    private function replacementAttributes(
+        Invoice $invoice,
+        array $invoiceInput,
+        ?int $salonCustomerId,
+        array $invoiceReplacement,
+    ): array {
+        $totals = $invoiceReplacement['totals'];
+        $paymentRows = $invoiceReplacement['payment_rows'];
+        $status = $invoiceReplacement['status'];
+
+        return [
+            'salon_customer_id' => $salonCustomerId,
+            'customer_name' => trim($invoiceInput['customer_name']),
+            'customer_phone' => $invoiceInput['customer_phone'] ?? null,
+            'barber_id' => $invoiceReplacement['barber_id'],
+            'subtotal' => $totals['subtotal'],
+            'discount' => $totals['discount'],
+            'total' => $totals['total'],
+            'payment_method' => $paymentRows[0]['payment_method'] ?? $invoice->payment_method,
+            'status' => $status->value,
+            'notes' => $invoiceInput['notes'] ?? null,
+            'paid_at' => $status === InvoiceStatusEnum::PAID ? ($invoice->paid_at ?? now()) : null,
+        ];
     }
 
     private function resolveBarber(?Booking $booking, ?int $requestedBarberId): Employee
@@ -322,5 +450,17 @@ class InvoiceService
             'unit_price' => $item['unit_price_cents'] / 100,
             'total' => $item['total_cents'] / 100,
         ])->all();
+    }
+
+    private function invoiceRelations(): array
+    {
+        return [
+            'items',
+            'payments',
+            'salonCustomer',
+            'booking:id,date,from_hour,to_hour',
+            'cashier:id,first_name,last_name',
+            'barber:id,first_name,last_name',
+        ];
     }
 }

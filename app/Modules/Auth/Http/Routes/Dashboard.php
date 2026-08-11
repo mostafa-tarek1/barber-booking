@@ -4,6 +4,7 @@ use App\Modules\Auth\Http\Controllers\Dashboard\ActivityLog\ActivityLogControlle
 use App\Modules\Auth\Http\Controllers\Dashboard\Attendance\AttendanceController;
 use App\Modules\Auth\Http\Controllers\Dashboard\Customer\UserController;
 use App\Modules\Auth\Http\Controllers\Dashboard\Employee\EmployeeController;
+use App\Modules\Auth\Http\Controllers\Dashboard\Permission\PermissionController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('dashboard')->group(function () {
@@ -15,6 +16,9 @@ Route::prefix('dashboard')->group(function () {
 Route::prefix('dashboard')->middleware('baseAuthMiddleware:employee')->group(function () {
     Route::controller(EmployeeController::class)->group(function () {
         Route::post('logout', 'logout')->name('logout');
+        Route::post('change_password', 'changePassword')
+            ->middleware('employeeRole:admin,super_admin')
+            ->name('change_password');
         Route::post('fetch_employees', 'fetchEmployees')
             ->middleware('employeeRole:admin,super_admin,employee')
             ->name('fetch_employees');
@@ -44,7 +48,7 @@ Route::prefix('dashboard')->middleware('baseAuthMiddleware:employee')->group(fun
         Route::post('toggle_approval', 'toggleUserApproval');
 
         // fetch permissions
-        Route::post('updateOrCreatePermission', [\App\Modules\Auth\Http\Controllers\Dashboard\Permission\PermissionController::class, 'store_permission'])->name('create_permissions');
+        Route::post('updateOrCreatePermission', [PermissionController::class, 'store_permission'])->name('create_permissions');
 
     });
     // user_id

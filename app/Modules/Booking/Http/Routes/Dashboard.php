@@ -1,9 +1,9 @@
 <?php
 
 use App\Modules\Booking\Http\Controllers\Dashboard\Booking\BookingController;
+use App\Modules\Booking\Http\Controllers\Dashboard\BookingReview\BookingReviewController;
 use App\Modules\Booking\Http\Controllers\Dashboard\Invoice\InvoiceController;
 use App\Modules\Booking\Http\Controllers\Dashboard\SalonCustomer\SalonCustomerController;
-use App\Modules\Booking\Http\Controllers\Dashboard\BookingReview\BookingReviewController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('dashboard')->group(function () {
@@ -28,6 +28,11 @@ Route::prefix('dashboard')->group(function () {
             Route::post('delete_booking', [BookingController::class, 'deleteBooking']);
             Route::post('create_invoice', [InvoiceController::class, 'create']);
             Route::post('collect_invoice_payment', [InvoiceController::class, 'collectPayment']);
+        });
+
+        Route::middleware('employeeRole:super_admin')->group(function () {
+            Route::post('update_invoice', [InvoiceController::class, 'update']);
+            Route::post('delete_invoice', [InvoiceController::class, 'destroy']);
         });
 
         Route::middleware('employeeRole:admin,super_admin')->group(function () {
