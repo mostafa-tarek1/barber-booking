@@ -3,6 +3,7 @@
 namespace App\Modules\Finance\Application\Services;
 
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
+use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\InvoicePayment;
 use App\Modules\Finance\Domain\Enums\ExpenseCategoryEnum;
 use App\Modules\Finance\Infrastructure\Persistence\Models\Expense\Expense;
 use App\Support\BusinessDay;
@@ -75,6 +76,7 @@ class FinancialReportService
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
             'revenue' => $revenue,
+            'revenue_by_payment_method' => $this->revenueByPaymentMethod($dateFrom, $dateTo),
             'expenses' => $expenses,
             'net_profit' => $revenue - $expenses,
         ];
@@ -150,5 +152,25 @@ class FinancialReportService
         return (float) Expense::query()
             ->whereBetween('expense_date', [$dateFrom, $dateTo])
             ->sum('amount');
+    }
+
+    private function revenueByPaymentMethod(string $dateFrom, string $dateTo): array
+    {
+        [$start] = BusinessDay::range($dateFrom);
+        [, $end] = BusinessDay::range($dateTo);
+        $paymentTotals = InvoicePayment::query()
+            ->join('invoices', 'invoice_payments.invoice_id', '=', 'invoices.id')
+            ->where('invoices.status', 'paid')
+            ->where('invoices.paid_at', '>=', $start)
+            ->where('invoices.paid_at', '<', $end)
+            ->selectRaw('invoice_payments.payment_method, SUM(invoice_payments.amount) as total')
+            ->groupBy('invoice_payments.payment_method')
+            ->pluck('total', 'payment_method');
+
+        return [
+            'cash' => (float) ($paymentTotals['cash'] ?? 0),
+            'wallet' => (float) ($paymentTotals['wallet'] ?? 0),
+            'card' => (float) ($paymentTotals['card'] ?? 0),
+        ];
     }
 }

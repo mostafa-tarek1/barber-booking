@@ -92,6 +92,29 @@ class ExpenseFinancialReportTest extends TestCase
         $this->assertSame('2026-08-10', $report['daily_activity'][0]['date']);
     }
 
+    public function test_financial_summary_splits_paid_revenue_by_payment_method(): void
+    {
+        $cashier = $this->employee('كاشير', 'employee');
+        $this->paidInvoice($cashier, 1000, '2026-08-11 14:00:00', [
+            ['payment_method' => 'cash', 'amount' => 600],
+            ['payment_method' => 'wallet', 'amount' => 400],
+        ]);
+        $this->paidInvoice($cashier, 500, '2026-08-11 15:00:00', [
+            ['payment_method' => 'card', 'amount' => 500],
+        ]);
+
+        $report = app(FinancialReportService::class)->report([
+            'date_from' => '2026-08-11',
+            'date_to' => '2026-08-11',
+        ]);
+
+        $this->assertSame([
+            'cash' => 600.0,
+            'wallet' => 400.0,
+            'card' => 500.0,
+        ], $report['selected_period']['revenue_by_payment_method']);
+    }
+
     public function test_cashier_financial_access_is_limited_to_current_business_day(): void
     {
         $this->travelTo(Carbon::parse('2026-08-11 12:00:00', 'Africa/Cairo'));
@@ -198,9 +221,9 @@ class ExpenseFinancialReportTest extends TestCase
         ]);
     }
 
-    private function paidInvoice(Employee $cashier, float $total, string $paidAt): void
+    private function paidInvoice(Employee $cashier, float $total, string $paidAt, array $payments = []): void
     {
-        Invoice::query()->create([
+        $invoice = Invoice::query()->create([
             'customer_name' => 'عميل اختبار',
             'cashier_id' => $cashier->id,
             'subtotal' => $total,
@@ -210,6 +233,10 @@ class ExpenseFinancialReportTest extends TestCase
             'status' => 'paid',
             'paid_at' => Carbon::parse($paidAt, 'Africa/Cairo'),
         ]);
+        $invoice->payments()->createMany($payments ?: [[
+            'payment_method' => 'cash',
+            'amount' => $total,
+        ]]);
     }
 
     private function expense(float $amount, string $category, string $date, string $description): void
