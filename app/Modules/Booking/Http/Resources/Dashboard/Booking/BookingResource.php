@@ -69,10 +69,10 @@ class BookingResource extends JsonResource
                 'collected_at' => $this->deposit->collected_at?->toDateTimeString(),
             ] : null),
             'employee' => $this->whenLoaded('employee', function () {
-                return [
+                return $this->employee ? [
                     'id' => $this->employee->id,
                     'name' => trim($this->employee->first_name.' '.$this->employee->last_name),
-                ];
+                ] : null;
             }),
 
             // معلومات إضافية محسنة

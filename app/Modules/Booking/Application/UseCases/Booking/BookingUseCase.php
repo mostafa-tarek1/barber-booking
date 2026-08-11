@@ -105,6 +105,7 @@ class BookingUseCase
                         'services.translations',
                         'packages.translations',
                         'deposit',
+                        'employee:id,first_name,last_name',
                         'createdBy',
                         'updatedBy',
                     ]

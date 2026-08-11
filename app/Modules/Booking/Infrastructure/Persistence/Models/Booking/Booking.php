@@ -5,6 +5,7 @@ namespace App\Modules\Booking\Infrastructure\Persistence\Models\Booking;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Booking\Infrastructure\Persistence\Models\BookingDeposit\BookingDeposit;
 use App\Modules\Booking\Infrastructure\Persistence\Models\BookingReview\BookingReview;
+use App\Modules\Booking\Infrastructure\Persistence\Models\BookingService\BookingService;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Invoice\Invoice;
 use App\Modules\Service\Infrastructure\Persistence\Models\Package\Package;
 use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
@@ -79,11 +80,14 @@ class Booking extends Model implements TranslatableContract
 
     public function employee()
     {
-        // Get the employee from the first service in the booking
-        return $this->belongsToMany(Employee::class, 'booking_service', 'booking_id', 'employee_id')
-            ->withPivot(['service_id', 'created_at', 'updated_at'])
-            ->limit(1)
-            ->withDefault();
+        return $this->hasOneThrough(
+            Employee::class,
+            BookingService::class,
+            'booking_id',
+            'id',
+            'id',
+            'employee_id'
+        )->orderBy('booking_service.id');
     }
 
     public function invoice()
