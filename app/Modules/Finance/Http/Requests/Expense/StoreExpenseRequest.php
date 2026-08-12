@@ -3,6 +3,7 @@
 namespace App\Modules\Finance\Http\Requests\Expense;
 
 use App\Modules\Finance\Domain\Enums\ExpenseCategoryEnum;
+use App\Modules\Finance\Domain\Enums\ExpensePaymentMethodEnum;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,6 +20,7 @@ class StoreExpenseRequest extends FormRequest
             'category' => ['required', Rule::enum(ExpenseCategoryEnum::class)],
             'description' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2'],
+            'payment_method' => ['required', Rule::enum(ExpensePaymentMethodEnum::class)],
             'expense_date' => ['required', 'date'],
             'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
         ];

@@ -4,6 +4,7 @@ namespace App\Modules\Finance\Infrastructure\Persistence\Models\Expense;
 
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Finance\Domain\Enums\ExpenseCategoryEnum;
+use App\Modules\Finance\Domain\Enums\ExpensePaymentMethodEnum;
 use Illuminate\Database\Eloquent\Model;
 
 class Expense extends Model
@@ -12,6 +13,7 @@ class Expense extends Model
         'category',
         'description',
         'amount',
+        'payment_method',
         'expense_date',
         'employee_id',
         'created_by',
@@ -21,6 +23,7 @@ class Expense extends Model
     {
         return [
             'category' => ExpenseCategoryEnum::class,
+            'payment_method' => ExpensePaymentMethodEnum::class,
             'amount' => 'decimal:2',
             'expense_date' => 'date:Y-m-d',
         ];

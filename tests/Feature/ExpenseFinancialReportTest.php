@@ -26,6 +26,7 @@ class ExpenseFinancialReportTest extends TestCase
             'category' => 'meals',
             'description' => 'فطار محمد',
             'amount' => 50,
+            'payment_method' => 'cash',
             'expense_date' => '2026-08-11',
             'employee_id' => $teamMember->id,
         ]);
@@ -92,7 +93,7 @@ class ExpenseFinancialReportTest extends TestCase
         $this->assertSame('2026-08-10', $report['daily_activity'][0]['date']);
     }
 
-    public function test_financial_summary_splits_paid_revenue_by_payment_method(): void
+    public function test_financial_summary_subtracts_expenses_from_matching_payment_method(): void
     {
         $cashier = $this->employee('كاشير', 'employee');
         $this->paidInvoice($cashier, 1000, '2026-08-11 14:00:00', [
@@ -102,17 +103,35 @@ class ExpenseFinancialReportTest extends TestCase
         $this->paidInvoice($cashier, 500, '2026-08-11 15:00:00', [
             ['payment_method' => 'card', 'amount' => 500],
         ]);
+        $this->expense(100, 'supplies', '2026-08-11', 'مناديل نقدي');
+        Expense::query()->create([
+            'category' => 'internet',
+            'description' => 'إنترنت محفظة',
+            'amount' => 50,
+            'payment_method' => 'wallet',
+            'expense_date' => '2026-08-11',
+        ]);
 
         $report = app(FinancialReportService::class)->report([
             'date_from' => '2026-08-11',
             'date_to' => '2026-08-11',
         ]);
 
+        $this->assertFinancialSummary($report['selected_period'], 1500, 150, 1350);
         $this->assertSame([
             'cash' => 600.0,
             'wallet' => 400.0,
             'card' => 500.0,
         ], $report['selected_period']['revenue_by_payment_method']);
+        $this->assertSame([
+            'cash' => 100.0,
+            'wallet' => 50.0,
+        ], $report['selected_period']['expenses_by_payment_method']);
+        $this->assertSame([
+            'cash' => 500.0,
+            'wallet' => 350.0,
+            'card' => 500.0,
+        ], $report['selected_period']['net_by_payment_method']);
     }
 
     public function test_cashier_financial_access_is_limited_to_current_business_day(): void
@@ -160,6 +179,7 @@ class ExpenseFinancialReportTest extends TestCase
             'category' => 'electricity',
             'description' => 'شحن الكهرباء',
             'amount' => 200,
+            'payment_method' => 'cash',
             'expense_date' => $expenseDate,
         ]);
 
@@ -176,6 +196,7 @@ class ExpenseFinancialReportTest extends TestCase
             'category' => 'meals',
             'description' => 'فطار الفريق',
             'amount' => 50,
+            'payment_method' => 'cash',
             'expense_date' => '2026-08-11',
             'created_by' => $cashier->id,
         ]);
@@ -206,6 +227,7 @@ class ExpenseFinancialReportTest extends TestCase
                 'category' => 'meals',
                 'description' => 'وصف معدل',
                 'amount' => 60,
+                'payment_method' => 'cash',
                 'expense_date' => '2026-08-11',
             ]],
             'delete' => ['delete_expense', []],
@@ -245,6 +267,7 @@ class ExpenseFinancialReportTest extends TestCase
             'category' => $category,
             'description' => $description,
             'amount' => $amount,
+            'payment_method' => 'cash',
             'expense_date' => $date,
         ]);
     }

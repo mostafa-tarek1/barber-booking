@@ -16,6 +16,8 @@ class ExpenseResource extends JsonResource
             'category_label' => $this->category->label(),
             'description' => $this->description,
             'amount' => $this->amount,
+            'payment_method' => $this->payment_method->value,
+            'payment_method_label' => $this->payment_method->label(),
             'expense_date' => $this->expense_date->format('Y-m-d'),
             'employee' => $this->employeeSummary(),
             'creator' => $this->creatorSummary(),

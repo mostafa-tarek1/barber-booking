@@ -71,12 +71,20 @@ class FinancialReportService
     {
         $revenue = $this->paidRevenue($dateFrom, $dateTo);
         $expenses = $this->expensesTotal($dateFrom, $dateTo);
+        $revenueByMethod = $this->revenueByPaymentMethod($dateFrom, $dateTo);
+        $expensesByMethod = $this->expensesByPaymentMethod($dateFrom, $dateTo);
 
         return [
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
             'revenue' => $revenue,
-            'revenue_by_payment_method' => $this->revenueByPaymentMethod($dateFrom, $dateTo),
+            'revenue_by_payment_method' => $revenueByMethod,
+            'expenses_by_payment_method' => $expensesByMethod,
+            'net_by_payment_method' => [
+                'cash' => $revenueByMethod['cash'] - $expensesByMethod['cash'],
+                'wallet' => $revenueByMethod['wallet'] - $expensesByMethod['wallet'],
+                'card' => $revenueByMethod['card'],
+            ],
             'expenses' => $expenses,
             'net_profit' => $revenue - $expenses,
         ];
@@ -171,6 +179,20 @@ class FinancialReportService
             'cash' => (float) ($paymentTotals['cash'] ?? 0),
             'wallet' => (float) ($paymentTotals['wallet'] ?? 0),
             'card' => (float) ($paymentTotals['card'] ?? 0),
+        ];
+    }
+
+    private function expensesByPaymentMethod(string $dateFrom, string $dateTo): array
+    {
+        $expenseTotals = Expense::query()
+            ->whereBetween('expense_date', [$dateFrom, $dateTo])
+            ->selectRaw('payment_method, SUM(amount) as total')
+            ->groupBy('payment_method')
+            ->pluck('total', 'payment_method');
+
+        return [
+            'cash' => (float) ($expenseTotals['cash'] ?? 0),
+            'wallet' => (float) ($expenseTotals['wallet'] ?? 0),
         ];
     }
 }
