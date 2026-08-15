@@ -12,9 +12,8 @@ class PackageController extends Controller
     {
         $packages = Package::query()
             ->where('is_active', true)
-            ->whereHas('services', fn ($query) => $query->where('services.is_active', true))
-            ->whereDoesntHave('services', fn ($query) => $query->where('services.is_active', false))
-            ->with(['services' => fn ($query) => $query->where('services.is_active', true), 'services.translations'])
+            ->whereHas('services')
+            ->with(['translations', 'services.translations'])
             ->get();
 
         return response()->json([

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
 use App\Modules\Booking\Domain\Enums\BookingStatusEnum;
 use App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking;
+use App\Modules\Service\Infrastructure\Persistence\Models\Package\Package;
 use App\Modules\Service\Infrastructure\Persistence\Models\Service\Service;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -52,6 +53,30 @@ class PublicBookingFlowTest extends TestCase
         $booking = Booking::query()->sole();
         $this->assertSame(BookingStatusEnum::CONFIRMED->value, (int) $booking->status);
         $this->assertNull($booking->expires_at);
+    }
+
+    public function test_active_package_remains_bookable_when_a_service_is_hidden_from_individual_booking(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-10 12:00', 'Africa/Cairo'));
+        [$barber, $service] = $this->bookableSelection();
+        $service->update(['is_active' => false]);
+        $package = Package::query()->create(['price' => 300, 'is_active' => true]);
+        $package->services()->attach($service->id, ['quantity' => 1, 'sort_order' => 0]);
+        $package->translateOrNew('ar')->name = 'باقة العريس';
+        $package->translateOrNew('en')->name = 'Groom package';
+        $package->save();
+
+        $this->postJson('/api/fetch_packages')
+            ->assertSuccessful()
+            ->assertJsonPath('data.0.id', $package->id)
+            ->assertJsonPath('data.0.translations.ar.name', 'باقة العريس');
+
+        $payload = $this->bookingPayload($barber, $service, '13:00');
+        $payload['services'] = [];
+        $payload['packages'] = [$package->id];
+
+        $this->postJson('/api/create_booking', $payload)->assertSuccessful();
+        $this->assertDatabaseHas('booking_package', ['package_id' => $package->id]);
     }
 
     public function test_midnight_booking_occupies_the_next_day_slot_of_the_selected_business_day(): void

@@ -75,6 +75,7 @@ class PackageController extends Controller
             $rules["translations.name_$locale"] = ['required', 'string', 'min:2', 'max:255'];
             $rules["translations.description_$locale"] = ['nullable', 'string', 'max:2000'];
         }
+        $rules['translations.name_ar'][] = 'regex:/[\x{0600}-\x{06FF}]/u';
 
         return $request->validate($rules);
     }

@@ -411,7 +411,7 @@ class InvoiceService
                 throw ValidationException::withMessages(['items' => 'One or more services do not exist.']);
             }
             if ($packageId && ! $package) {
-                throw ValidationException::withMessages(['items' => 'إحدى الباكدجات غير متاحة.']);
+                throw ValidationException::withMessages(['items' => 'إحدى الباقات غير متاحة.']);
             }
             if (! $service && ! $package
                 && (! isset($requestedItem['description']) || ! array_key_exists('unit_price', $requestedItem))) {

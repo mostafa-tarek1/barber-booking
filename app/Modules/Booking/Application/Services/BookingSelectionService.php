@@ -66,16 +66,13 @@ class BookingSelectionService
         $packages = Package::query()
             ->whereIn('id', $ids)
             ->where('is_active', true)
-            ->whereDoesntHave('services', fn ($query) => $query->where('services.is_active', false))
             ->with([
                 'translations',
-                'services' => fn ($query) => $query
-                    ->where('services.is_active', true)
-                    ->with('translations'),
+                'services.translations',
             ])
             ->get();
         if ($packages->count() !== $ids->count() || $packages->contains(fn (Package $package) => $package->services->isEmpty())) {
-            throw ValidationException::withMessages(['packages' => 'إحدى الباكدجات غير متاحة.']);
+            throw ValidationException::withMessages(['packages' => 'إحدى الباقات غير متاحة.']);
         }
 
         return $packages;
