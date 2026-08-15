@@ -25,6 +25,8 @@ class FetchBookingRequest extends BaseRequestAbstract
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'status' => ['nullable', 'integer', Rule::in([0, 1, 2, 3])],
+            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'sort' => ['nullable', Rule::in(['appointment', 'latest'])],
         ];
     }
 }

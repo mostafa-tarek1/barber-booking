@@ -9,14 +9,26 @@ class BookingFilterDTO extends BaseDTOAbstract
     protected bool $excludeAttributes = true;
 
     public $booking_id;
+
     public $name;
+
     public $phone;
+
     public $email;
+
     public $date;
+
     public $date_from;
+
     public $date_to;
+
     public $status;
+
     public $search;
+
+    public $employee_id;
+
+    public $sort = 'appointment';
 
     public function __construct(array $data = [])
     {
@@ -32,6 +44,8 @@ class BookingFilterDTO extends BaseDTOAbstract
             'date_from',
             'date_to',
             'status',
+            'employee_id',
+            'sort',
         ];
     }
 }

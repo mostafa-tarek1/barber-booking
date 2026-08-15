@@ -84,6 +84,11 @@ class BookingUseCase
                 'date_from' => $bookingFilterDto->date_from,
                 'date_to' => $bookingFilterDto->date_to,
                 'status' => $bookingFilterDto->status,
+                'employee_id' => $bookingFilterDto->employee_id,
+                'sort' => $bookingFilterDto->sort,
+                'paginate' => $bookingFilterDto->paginate,
+                'limit' => $bookingFilterDto->limit,
+                'page' => request()->integer('page', 1),
             ];
             $barberId = $this->employee?->employee_type === 'barber' ? $this->employee->id : null;
             $cacheKey = $this->cacheService->generateListCacheKey([

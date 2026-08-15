@@ -4,6 +4,7 @@ namespace App\Modules\Booking\Infrastructure\Persistence\Repositories\Booking;
 
 use Exception;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use App\Modules\Base\Domain\DTO\BaseDTOInterface;
 use App\Modules\Base\Domain\Repositories\BaseRepositoryAbstract;
@@ -44,7 +45,11 @@ class BookingRepository extends BaseRepositoryAbstract
         ->when($dto->date ?? null, fn ($bookingQuery, $date) => $bookingQuery->whereDate('date', $date))
         ->when($dto->date_from ?? null, fn ($bookingQuery, $date) => $bookingQuery->whereDate('date', '>=', $date))
         ->when($dto->date_to ?? null, fn ($bookingQuery, $date) => $bookingQuery->whereDate('date', '<=', $date))
-        ->when($dto->status !== null, fn ($bookingQuery) => $bookingQuery->where('status', $dto->status));
+        ->when($dto->status !== null, fn ($bookingQuery) => $bookingQuery->where('status', $dto->status))
+        ->when($dto->employee_id ?? null, fn ($bookingQuery, $employeeId) => $bookingQuery->whereHas(
+          'services',
+          fn ($serviceQuery) => $serviceQuery->where('booking_service.employee_id', $employeeId)
+        ));
 
       // البحث بالكلمة
       $query->when(isset($dto->word), function ($q) use ($dto, $translatableFields, $operator) {
@@ -95,18 +100,33 @@ class BookingRepository extends BaseRepositoryAbstract
         $query->with($withRelations);
       }
 
-      // ترتيب النتائج
-      $orderBy = $dto->orderBy ?? 'id';
-      $direction = $dto->direction ?? 'desc';
+      $query = $this->applyBookingOrder($query, $dto->sort ?? 'appointment');
 
       return $paginate
-        ? $query->orderBy($orderBy, $direction)->paginate($limit)
-        : $query->orderBy($orderBy, $direction)->get();
+        ? $query->paginate($limit)
+        : $query->get();
 
     } catch (Exception $e) {
       report($e);
       return collect();
     }
+  }
+
+  private function applyBookingOrder(Builder $query, string $sort): Builder
+  {
+    if ($sort === 'latest') {
+      return $query->orderByDesc('created_at')->orderByDesc('id');
+    }
+
+    $today = Carbon::today(config('app.timezone'))->toDateString();
+
+    return $query
+      ->orderByRaw('CASE WHEN date >= ? THEN 0 ELSE 1 END', [$today])
+      ->orderByRaw('CASE WHEN date >= ? THEN date END ASC', [$today])
+      ->orderByRaw('CASE WHEN date >= ? THEN from_hour END ASC', [$today])
+      ->orderByRaw('CASE WHEN date < ? THEN date END DESC', [$today])
+      ->orderByRaw('CASE WHEN date < ? THEN from_hour END DESC', [$today])
+      ->orderBy('id');
   }
 
   /**
