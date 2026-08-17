@@ -86,12 +86,13 @@ class BookingListTest extends TestCase
         $this->assertSame([$selectedBooking->id], $response->json('data.data.*.id'));
     }
 
-    public function test_default_booking_list_hides_finished_bookings_until_finished_status_is_requested(): void
+    public function test_default_booking_list_hides_cancelled_and_finished_bookings_until_their_status_is_requested(): void
     {
         $superAdmin = $this->employee('مدير', 'super_admin');
         $barber = $this->employee('مصطفى', 'barber');
         $service = Service::query()->create(['price' => 200, 'duration' => 30, 'is_active' => true]);
         $activeBooking = $this->bookingFor($service, $barber, ['name' => 'حجز نشط', 'status' => 1]);
+        $cancelledBooking = $this->bookingFor($service, $barber, ['name' => 'حجز ملغي', 'status' => 2]);
         $finishedBooking = $this->bookingFor($service, $barber, ['name' => 'حجز مكتمل', 'status' => 3]);
 
         $defaultBookingIds = $this->actingAs($superAdmin, 'employee')
@@ -104,9 +105,16 @@ class BookingListTest extends TestCase
         ])
             ->assertSuccessful()
             ->json('data.data.*.id');
+        $cancelledBookingIds = $this->postJson('/dashboard/fetch_bookings', [
+            'paginate' => 1,
+            'status' => 2,
+        ])
+            ->assertSuccessful()
+            ->json('data.data.*.id');
 
         $this->assertSame([$activeBooking->id], $defaultBookingIds);
         $this->assertSame([$finishedBooking->id], $finishedBookingIds);
+        $this->assertSame([$cancelledBooking->id], $cancelledBookingIds);
     }
 
     private function bookingFor(Service $service, Employee $barber, array $bookingAttributes): Booking

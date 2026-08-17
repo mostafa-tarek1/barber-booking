@@ -48,7 +48,10 @@ class BookingRepository extends BaseRepositoryAbstract
         ->when(
           $dto->status !== null,
           fn ($bookingQuery) => $bookingQuery->where('status', $dto->status),
-          fn ($bookingQuery) => $bookingQuery->where('status', '!=', BookingStatusEnum::FINISHED->value)
+          fn ($bookingQuery) => $bookingQuery->whereNotIn('status', [
+            BookingStatusEnum::CANCELLED->value,
+            BookingStatusEnum::FINISHED->value,
+          ])
         )
         ->when($dto->employee_id ?? null, fn ($bookingQuery, $employeeId) => $bookingQuery->whereHas(
           'services',
