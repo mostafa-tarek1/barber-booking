@@ -45,7 +45,11 @@ class BookingRepository extends BaseRepositoryAbstract
         ->when($dto->date ?? null, fn ($bookingQuery, $date) => $bookingQuery->whereDate('date', $date))
         ->when($dto->date_from ?? null, fn ($bookingQuery, $date) => $bookingQuery->whereDate('date', '>=', $date))
         ->when($dto->date_to ?? null, fn ($bookingQuery, $date) => $bookingQuery->whereDate('date', '<=', $date))
-        ->when($dto->status !== null, fn ($bookingQuery) => $bookingQuery->where('status', $dto->status))
+        ->when(
+          $dto->status !== null,
+          fn ($bookingQuery) => $bookingQuery->where('status', $dto->status),
+          fn ($bookingQuery) => $bookingQuery->where('status', '!=', BookingStatusEnum::FINISHED->value)
+        )
         ->when($dto->employee_id ?? null, fn ($bookingQuery, $employeeId) => $bookingQuery->whereHas(
           'services',
           fn ($serviceQuery) => $serviceQuery->where('booking_service.employee_id', $employeeId)
