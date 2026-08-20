@@ -26,3 +26,13 @@ Schedule::command('bookings:send-whatsapp-reminders')
     ->everyMinute()
     ->name('send-whatsapp-booking-reminders')
     ->withoutOverlapping(5);
+
+Schedule::command('queue:work', [
+    'database',
+    '--stop-when-empty',
+    '--tries' => 3,
+    '--timeout' => 180,
+])
+    ->everyMinute()
+    ->name('process-queued-jobs')
+    ->withoutOverlapping(10);
