@@ -318,6 +318,8 @@ class BookingUseCase
                 }
 
                 $oldStatus = (int) $booking->status;
+                $appointmentChanged = $date !== $booking->date->format('Y-m-d')
+                    || $from->format('H:i') !== substr($booking->from_hour, 0, 5);
                 $booking->update([
                     'date' => $date,
                     'from_hour' => $from->format('H:i'),
@@ -330,6 +332,7 @@ class BookingUseCase
                     'expires_at' => $nextStatus === BookingStatusEnum::PENDING->value
                         ? ($booking->expires_at ?? now()->addMinutes(15))
                         : null,
+                    ...($appointmentChanged ? ['whatsapp_reminder_sent_at' => null] : []),
                 ]);
 
                 if ($selectionChanged) {

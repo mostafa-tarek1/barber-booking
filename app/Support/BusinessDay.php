@@ -38,4 +38,15 @@ final class BusinessDay
 
         return [$start, $start->copy()->addDay()];
     }
+
+    public static function appointmentAt(string $date, string $time): Carbon
+    {
+        $appointment = Carbon::parse("{$date} {$time}", self::TIMEZONE);
+
+        if ($appointment->hour < self::START_HOUR) {
+            $appointment->addDay();
+        }
+
+        return $appointment;
+    }
 }

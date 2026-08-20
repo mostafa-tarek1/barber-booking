@@ -5,6 +5,7 @@ namespace App\Modules\Auth\Infrastructure\Persistence\Repositories\Admin;
 use App\Modules\Auth\Application\DTOS\Admin\LoginDTO;
 use App\Modules\Auth\Http\Enums\EmployeeTypeEnum;
 use App\Modules\Auth\Infrastructure\Persistence\Models\Admin\Employee;
+use App\Modules\Base\Domain\ApiService\WhatsAppApiService;
 use App\Modules\Base\Domain\DTO\BaseDTOInterface;
 use App\Modules\Base\Domain\Repositories\BaseRepositoryAbstract;
 use Exception;
@@ -29,6 +30,7 @@ class EmployeeRepository extends BaseRepositoryAbstract
     {
         $this->setModel(new Employee);
         $this->employee = Auth::user();
+        $this->whatsAppApiService = new WhatsAppApiService;
     }
 
     /**
@@ -136,13 +138,6 @@ class EmployeeRepository extends BaseRepositoryAbstract
 
     public function sendWhatsAppMessage($phone, $message)
     {
-        try {
-            $handeledPhone = handelPhone($phone);
-            $response = $this->whatsAppApiService->sendMessage($handeledPhone['phone'], $message, 'generalauth', $handeledPhone['countryCode']);
-
-            return $response;
-        } catch (\Exception $e) {
-            throw new \Exception($e->getMessage());
-        }
+        return $this->whatsAppApiService->sendMessage($phone, $message);
     }
 }

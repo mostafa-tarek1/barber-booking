@@ -164,15 +164,7 @@ class UserRepository extends BaseRepositoryAbstract
 
     public function sendWhatsAppMessage($phone, $countryCode, $message)
     {
-        try {
-            $handeledPhone = handelPhone($phone);
-            $handledCountryCode = $handeledPhone['countryCode'] && ! empty($handeledPhone['countryCode']) ? $handeledPhone['countryCode'] : handelPhone($countryCode)['countryCode'];
-            $response = $this->whatsAppApiService->sendMessage($handeledPhone['phone'], $message, config('services.whatsapp.session'), $handledCountryCode);
-
-            return $response;
-        } catch (\Exception $e) {
-            throw new \Exception($e->getMessage());
-        }
+        return $this->whatsAppApiService->sendMessage($phone, $message, $countryCode);
     }
 
     public function getLocation($userId)

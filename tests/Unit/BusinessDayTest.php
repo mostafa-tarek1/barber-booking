@@ -33,4 +33,20 @@ class BusinessDayTest extends TestCase
             'first second of new business day' => ['2026-07-31 04:00:00', '2026-07-31'],
         ];
     }
+
+    #[DataProvider('appointmentBoundaryProvider')]
+    public function test_appointment_time_resolves_from_its_business_date(string $time, string $expected): void
+    {
+        $appointment = BusinessDay::appointmentAt('2026-07-30', $time);
+
+        $this->assertSame($expected, $appointment->format('Y-m-d H:i:s'));
+    }
+
+    public static function appointmentBoundaryProvider(): array
+    {
+        return [
+            'before business-day boundary belongs to next calendar day' => ['03:59', '2026-07-31 03:59:00'],
+            'business-day boundary stays on selected date' => ['04:00', '2026-07-30 04:00:00'],
+        ];
+    }
 }

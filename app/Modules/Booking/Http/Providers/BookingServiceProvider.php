@@ -2,7 +2,7 @@
 
 namespace App\Modules\Booking\Http\Providers;
 
-
+use App\Modules\Booking\Application\Commands\SendWhatsAppBookingReminders;
 use Illuminate\Support\ServiceProvider;
 
 class BookingServiceProvider extends ServiceProvider
@@ -16,7 +16,7 @@ class BookingServiceProvider extends ServiceProvider
             \App\Modules\Booking\Domain\Repositories\BookingRepositoryInterface::class,
             \App\Modules\Booking\Infrastructure\Persistence\Repositories\Booking\BookingRepository::class
         );
-        
+
         $this->app->when(\App\Modules\Booking\Infrastructure\Persistence\Repositories\Booking\BookingRepository::class)
             ->needs(\App\Modules\Booking\Infrastructure\Persistence\Models\Booking\Booking::class)
             ->give(function () {
@@ -37,5 +37,7 @@ class BookingServiceProvider extends ServiceProvider
         foreach (glob(app_path('Modules/Booking/Application/Helpers') . '/*.php') as $filename) {
             require_once $filename;
         }
+
+        $this->commands([SendWhatsAppBookingReminders::class]);
     }
 }

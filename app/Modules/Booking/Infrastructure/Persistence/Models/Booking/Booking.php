@@ -34,6 +34,7 @@ class Booking extends Model implements TranslatableContract
         'to_hour',
         'status',
         'expires_at',
+        'whatsapp_reminder_sent_at',
         'created_by',
         'updated_by',
     ];
@@ -43,6 +44,7 @@ class Booking extends Model implements TranslatableContract
         'from_hour' => 'string',
         'to_hour' => 'string',
         'expires_at' => 'datetime',
+        'whatsapp_reminder_sent_at' => 'datetime',
     ];
 
     public function services()

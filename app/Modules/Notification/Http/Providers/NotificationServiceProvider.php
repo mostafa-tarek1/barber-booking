@@ -2,14 +2,16 @@
 
 namespace App\Modules\Notification\Http\Providers;
 
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Event;
-use App\Modules\Notification\Application\Events\BookingCreated;
-use App\Modules\Notification\Application\Events\BookingConfirmed;
 use App\Modules\Notification\Application\Events\BookingCancelled;
+use App\Modules\Notification\Application\Events\BookingConfirmed;
+use App\Modules\Notification\Application\Events\BookingCreated;
 use App\Modules\Notification\Application\Events\BookingFinished;
-use App\Modules\Notification\Application\Listeners\SendBookingCreatedNotification;
 use App\Modules\Notification\Application\Listeners\SendBookingConfirmedNotification;
+use App\Modules\Notification\Application\Listeners\SendBookingConfirmedWhatsAppNotification;
+use App\Modules\Notification\Application\Listeners\SendBookingCreatedNotification;
+use App\Modules\Notification\Application\Listeners\SendBookingCreatedWhatsAppNotification;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\ServiceProvider;
 
 class NotificationServiceProvider extends ServiceProvider
 {
@@ -40,8 +42,18 @@ class NotificationServiceProvider extends ServiceProvider
         );
 
         Event::listen(
+            BookingCreated::class,
+            SendBookingCreatedWhatsAppNotification::class
+        );
+
+        Event::listen(
             BookingConfirmed::class,
             SendBookingConfirmedNotification::class
+        );
+
+        Event::listen(
+            BookingConfirmed::class,
+            SendBookingConfirmedWhatsAppNotification::class
         );
 
         // يمكن إضافة المزيد من الـ listeners هنا
